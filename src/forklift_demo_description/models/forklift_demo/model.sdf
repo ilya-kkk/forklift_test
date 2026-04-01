@@ -36,6 +36,42 @@
           <diffuse>0.90 0.62 0.18 1.0</diffuse>
         </material>
       </visual>
+      <visual name="fork_carriage_visual">
+        <pose>0.60 0 -0.07 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.08 0.46 0.18</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.72 0.72 0.72 1.0</ambient>
+          <diffuse>0.72 0.72 0.72 1.0</diffuse>
+        </material>
+      </visual>
+      <visual name="left_fork_visual">
+        <pose>0.88 0.18 -0.15 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.56 0.08 0.04</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.72 0.72 0.72 1.0</ambient>
+          <diffuse>0.72 0.72 0.72 1.0</diffuse>
+        </material>
+      </visual>
+      <visual name="right_fork_visual">
+        <pose>0.88 -0.18 -0.15 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.56 0.08 0.04</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.72 0.72 0.72 1.0</ambient>
+          <diffuse>0.72 0.72 0.72 1.0</diffuse>
+        </material>
+      </visual>
     </link>
 
     <link name="front_left_wheel_link">

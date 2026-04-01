@@ -21,6 +21,7 @@ Visualization Manager:
       Reference Frame: map
       Value: true
     - Class: rviz_default_plugins/RobotModel
+      Alpha: 0.5
       Collision Enabled: false
       Description Source: Topic
       Description Topic:
@@ -44,6 +45,7 @@ Visualization Manager:
     - Class: rviz_default_plugins/LaserScan
       Color: 255; 85; 0
       Enabled: true
+      Filter size: 30
       Name: LaserScan
       Size (Pixels): 3
       Style: Flat Squares
@@ -58,6 +60,7 @@ Visualization Manager:
       Class: rviz_default_plugins/Map
       Color Scheme: map
       Enabled: true
+      Filter size: 20
       Name: Map
       Topic:
         Depth: 5
@@ -71,6 +74,7 @@ Visualization Manager:
       Class: rviz_default_plugins/Path
       Color: 0; 200; 70
       Enabled: true
+      Filter size: 30
       Head Diameter: 0.15
       Head Length: 0.12
       Length: 0.2
@@ -88,6 +92,45 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /demo_path
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 255; 120; 40
+      Enabled: true
+      Filter size: 100
+      Head Diameter: 0.1
+      Head Length: 0.08
+      Length: 0.1
+      Line Style: Billboards
+      Line Width: 0.12
+      Name: LookaheadArc
+      Pose Color: 255; 255; 255
+      Pose Style: None
+      Radius: 0.04
+      Shaft Diameter: 0.02
+      Shaft Length: 0.08
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /lookahead_arc
+      Value: true
+    - Alpha: 1
+      Class: rviz_default_plugins/PointStamped
+      Color: 255; 225; 40
+      Enabled: true
+      Filter size: 30
+      History Length: 1
+      Name: LookaheadPoint
+      Radius: 0.09
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /lookahead_point
       Value: true
     - Angle Tolerance: 0.1
       Class: rviz_default_plugins/Odometry
@@ -117,7 +160,7 @@ Visualization Manager:
   Global Options:
     Background Color: 34; 39; 46
     Fixed Frame: map
-    Frame Rate: 30
+    Frame Rate: 20
   Name: root
   Tools:
     - Class: rviz_default_plugins/Interact

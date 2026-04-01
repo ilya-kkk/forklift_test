@@ -5,10 +5,13 @@ cmd_vel_to_tricycle:
     steering_cmd_topic: /forklift/rear_steering_cmd
     drive_cmd_topic: /forklift/rear_wheel_cmd
     gz_cmd_vel_topic: /model/forklift_demo/cmd_vel
+    motion_mode_topic: /motion_mode
+    motion_mode: FORKS_FIRST
     wheelbase: 1.2
     wheel_radius: 0.18
     max_steering_angle: 1.48353
     max_steering_rate: 1.4
     max_wheel_angular_velocity: 5.0
+    reverse_velocity_scale: 0.5
     deadband_linear_velocity: 0.02
     steering_hold_when_stopped: true

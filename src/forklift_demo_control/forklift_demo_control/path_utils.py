@@ -51,11 +51,114 @@ def densify_polyline(points: Sequence[Point2D], resolution: float) -> List[Point
     return dense_points
 
 
+def round_polyline_corner(
+    points: Sequence[Point2D],
+    corner_index: int,
+    radius: float,
+    resolution: float,
+) -> List[Point2D]:
+    if len(points) < 3:
+        return list(points)
+
+    if corner_index <= 0 or corner_index >= len(points) - 1:
+        raise ValueError("corner_index must refer to an interior point")
+
+    if radius <= 0.0:
+        return list(points)
+
+    if resolution <= 0.0:
+        raise ValueError("resolution must be > 0")
+
+    previous_point = points[corner_index - 1]
+    corner_point = points[corner_index]
+    next_point = points[corner_index + 1]
+
+    in_dx = corner_point[0] - previous_point[0]
+    in_dy = corner_point[1] - previous_point[1]
+    out_dx = next_point[0] - corner_point[0]
+    out_dy = next_point[1] - corner_point[1]
+
+    in_length = math.hypot(in_dx, in_dy)
+    out_length = math.hypot(out_dx, out_dy)
+    if in_length < 1e-9 or out_length < 1e-9:
+        return list(points)
+
+    in_unit = (in_dx / in_length, in_dy / in_length)
+    out_unit = (out_dx / out_length, out_dy / out_length)
+
+    dot_product = max(-1.0, min(1.0, in_unit[0] * out_unit[0] + in_unit[1] * out_unit[1]))
+    turn_angle = math.acos(dot_product)
+    if turn_angle < 1e-6 or abs(math.pi - turn_angle) < 1e-6:
+        return list(points)
+
+    tangent_distance = radius / math.tan(turn_angle * 0.5)
+    tangent_distance = min(tangent_distance, in_length * 0.5, out_length * 0.5)
+    if tangent_distance < 1e-6:
+        return list(points)
+
+    effective_radius = tangent_distance * math.tan(turn_angle * 0.5)
+    start_tangent = (
+        corner_point[0] - in_unit[0] * tangent_distance,
+        corner_point[1] - in_unit[1] * tangent_distance,
+    )
+    end_tangent = (
+        corner_point[0] + out_unit[0] * tangent_distance,
+        corner_point[1] + out_unit[1] * tangent_distance,
+    )
+
+    bisector = (-in_unit[0] + out_unit[0], -in_unit[1] + out_unit[1])
+    bisector_length = math.hypot(bisector[0], bisector[1])
+    if bisector_length < 1e-9:
+        return list(points)
+
+    center_distance = effective_radius / math.sin(turn_angle * 0.5)
+    center = (
+        corner_point[0] + bisector[0] / bisector_length * center_distance,
+        corner_point[1] + bisector[1] / bisector_length * center_distance,
+    )
+
+    start_angle = math.atan2(start_tangent[1] - center[1], start_tangent[0] - center[0])
+    end_angle = math.atan2(end_tangent[1] - center[1], end_tangent[0] - center[0])
+    turn_direction = in_unit[0] * out_unit[1] - in_unit[1] * out_unit[0]
+
+    if turn_direction > 0.0:
+        while end_angle <= start_angle:
+            end_angle += 2.0 * math.pi
+        sweep_angle = end_angle - start_angle
+    else:
+        while end_angle >= start_angle:
+            end_angle -= 2.0 * math.pi
+        sweep_angle = end_angle - start_angle
+
+    arc_length = abs(sweep_angle) * effective_radius
+    arc_steps = max(2, int(math.ceil(arc_length / resolution)))
+
+    rounded_points: List[Point2D] = list(points[:corner_index])
+    rounded_points.append(start_tangent)
+    for step in range(1, arc_steps):
+        ratio = step / arc_steps
+        angle = start_angle + sweep_angle * ratio
+        rounded_points.append(
+            (
+                center[0] + effective_radius * math.cos(angle),
+                center[1] + effective_radius * math.sin(angle),
+            )
+        )
+    rounded_points.append(end_tangent)
+    rounded_points.extend(points[corner_index + 1 :])
+    return rounded_points
+
+
 def reverse_points(points: Iterable[Point2D]) -> List[Point2D]:
     return list(reversed(list(points)))
 
 
-def build_path(points: Sequence[Point2D], frame_id: str, stamp) -> Path:
+def build_path(
+    points: Sequence[Point2D],
+    frame_id: str,
+    stamp,
+    yaw_offset: float = 0.0,
+) -> Path:
     if not points:
         raise ValueError("points must not be empty")
 
@@ -78,6 +181,8 @@ def build_path(points: Sequence[Point2D], frame_id: str, stamp) -> Path:
                 yaw = previous_yaw
             else:
                 yaw = math.atan2(delta_y, delta_x)
+
+        yaw = math.atan2(math.sin(yaw + yaw_offset), math.cos(yaw + yaw_offset))
 
         pose = PoseStamped()
         pose.header = path.header

@@ -17,6 +17,8 @@ def generate_launch_description() -> LaunchDescription:
     x = LaunchConfiguration("x")
     y = LaunchConfiguration("y")
     yaw = LaunchConfiguration("yaw")
+    path_start_x = LaunchConfiguration("path_start_x")
+    path_start_y = LaunchConfiguration("path_start_y")
     path_horizontal_length = LaunchConfiguration("path_horizontal_length")
     path_vertical_length = LaunchConfiguration("path_vertical_length")
 
@@ -122,8 +124,8 @@ def generate_launch_description() -> LaunchDescription:
             parameters=[
                 {
                     "use_sim_time": use_sim_time,
-                    "start_x": x,
-                    "start_y": y,
+                    "start_x": path_start_x,
+                    "start_y": path_start_y,
                     "horizontal_length": path_horizontal_length,
                     "vertical_length": path_vertical_length,
                 }
@@ -152,8 +154,10 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("x", default_value="-1.0"),
             DeclareLaunchArgument("y", default_value="-1.0"),
             DeclareLaunchArgument("yaw", default_value="0.0"),
-            DeclareLaunchArgument("path_horizontal_length", default_value="4.0"),
-            DeclareLaunchArgument("path_vertical_length", default_value="4.0"),
+            DeclareLaunchArgument("path_start_x", default_value="-3.0"),
+            DeclareLaunchArgument("path_start_y", default_value="-3.0"),
+            DeclareLaunchArgument("path_horizontal_length", default_value="6.0"),
+            DeclareLaunchArgument("path_vertical_length", default_value="6.0"),
             gazebo,
             bridge,
             TimerAction(period=2.0, actions=[spawn_robot]),
