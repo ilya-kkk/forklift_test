@@ -137,7 +137,7 @@
     </joint>
 
     <link name="rear_steer_link">
-      <pose>-0.42 0.0 0.18 0 0 0</pose>
+      <pose>-0.42 0.35 0.18 0 0 0</pose>
       <inertial>
         <mass>0.5</mass>
         <inertia>
@@ -166,7 +166,7 @@
     </joint>
 
     <link name="rear_drive_wheel_link">
-      <pose>-0.42 0 0.18 0 0 0</pose>
+      <pose>-0.42 0.35 0.18 0 0 0</pose>
       <inertial>
         <mass>2.0</mass>
         <inertia>
@@ -210,6 +210,88 @@
         <limit>
           <effort>80</effort>
           <velocity>6.0</velocity>
+        </limit>
+      </axis>
+    </joint>
+
+    <link name="rear_right_caster_link">
+      <pose>-0.34 -0.35 0.18 0 0 0</pose>
+      <inertial>
+        <mass>0.5</mass>
+        <inertia>
+          <ixx>0.01</ixx>
+          <iyy>0.01</iyy>
+          <izz>0.01</izz>
+          <ixy>0.0</ixy>
+          <ixz>0.0</ixz>
+          <iyz>0.0</iyz>
+        </inertia>
+      </inertial>
+    </link>
+
+    <joint name="rear_right_steering_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>rear_right_caster_link</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <dynamics>
+          <damping>0.05</damping>
+        </dynamics>
+        <limit>
+          <effort>15</effort>
+          <velocity>6.0</velocity>
+        </limit>
+      </axis>
+    </joint>
+
+    <link name="rear_right_wheel_link">
+      <pose>-0.42 -0.35 0.18 0 0 0</pose>
+      <inertial>
+        <mass>2.0</mass>
+        <inertia>
+          <ixx>0.05</ixx>
+          <iyy>0.02</iyy>
+          <izz>0.05</izz>
+          <ixy>0.0</ixy>
+          <ixz>0.0</ixz>
+          <iyz>0.0</iyz>
+        </inertia>
+      </inertial>
+      <collision name="rear_right_wheel_collision">
+        <pose>0 0 0 1.57079632679 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.18</radius>
+            <length>0.1</length>
+          </cylinder>
+        </geometry>
+      </collision>
+      <visual name="rear_right_wheel_visual">
+        <pose>0 0 0 1.57079632679 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.18</radius>
+            <length>0.1</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.10 0.10 0.10 1.0</ambient>
+          <diffuse>0.10 0.10 0.10 1.0</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <joint name="rear_right_wheel_joint" type="revolute">
+      <parent>rear_right_caster_link</parent>
+      <child>rear_right_wheel_link</child>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <dynamics>
+          <damping>0.02</damping>
+        </dynamics>
+        <limit>
+          <effort>25</effort>
+          <velocity>20.0</velocity>
         </limit>
       </axis>
     </joint>
@@ -293,6 +375,8 @@
       <joint_name>front_right_wheel_joint</joint_name>
       <joint_name>rear_steering_joint</joint_name>
       <joint_name>rear_wheel_joint</joint_name>
+      <joint_name>rear_right_steering_joint</joint_name>
+      <joint_name>rear_right_wheel_joint</joint_name>
     </plugin>
 
     <plugin
