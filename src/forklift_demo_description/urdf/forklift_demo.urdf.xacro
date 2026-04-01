@@ -1,0 +1,108 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="forklift_demo">
+  <xacro:arg name="use_sim_time" default="true"/>
+  <xacro:arg name="base_length" default="1.2"/>
+  <xacro:arg name="base_width" default="0.8"/>
+  <xacro:arg name="base_height" default="0.32"/>
+  <xacro:arg name="wheel_radius" default="0.18"/>
+  <xacro:arg name="wheel_width" default="0.08"/>
+  <xacro:arg name="wheelbase" default="1.2"/>
+  <xacro:arg name="max_steering_angle" default="1.48353"/>
+  <xacro:arg name="laser_x" default="0.2"/>
+  <xacro:arg name="laser_z" default="0.55"/>
+
+  <material name="body_orange">
+    <color rgba="0.90 0.62 0.18 1.0"/>
+  </material>
+
+  <material name="wheel_black">
+    <color rgba="0.12 0.12 0.12 1.0"/>
+  </material>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.25" rpy="0 0 0"/>
+      <geometry>
+        <box size="$(arg base_length) $(arg base_width) $(arg base_height)"/>
+      </geometry>
+      <material name="body_orange"/>
+    </visual>
+  </link>
+
+  <link name="front_left_wheel_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+      <geometry>
+        <cylinder radius="$(arg wheel_radius)" length="$(arg wheel_width)"/>
+      </geometry>
+      <material name="wheel_black"/>
+    </visual>
+  </link>
+
+  <link name="front_right_wheel_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+      <geometry>
+        <cylinder radius="$(arg wheel_radius)" length="$(arg wheel_width)"/>
+      </geometry>
+      <material name="wheel_black"/>
+    </visual>
+  </link>
+
+  <joint name="front_left_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="front_left_wheel_link"/>
+    <origin xyz="0.42 0.35 0.18" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <joint name="front_right_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="front_right_wheel_link"/>
+    <origin xyz="0.42 -0.35 0.18" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <link name="rear_steer_link"/>
+
+  <joint name="rear_steering_joint" type="revolute">
+    <parent link="base_link"/>
+    <child link="rear_steer_link"/>
+    <origin xyz="-0.42 0.0 0.18" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="50" velocity="1.5" lower="-$(arg max_steering_angle)" upper="$(arg max_steering_angle)"/>
+  </joint>
+
+  <link name="rear_drive_wheel_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+      <geometry>
+        <cylinder radius="$(arg wheel_radius)" length="0.10"/>
+      </geometry>
+      <material name="wheel_black"/>
+    </visual>
+  </link>
+
+  <joint name="rear_wheel_joint" type="continuous">
+    <parent link="rear_steer_link"/>
+    <child link="rear_drive_wheel_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <link name="laser_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.05" length="0.04"/>
+      </geometry>
+      <material name="wheel_black"/>
+    </visual>
+  </link>
+
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_link"/>
+    <origin xyz="$(arg laser_x) 0 $(arg laser_z)" rpy="0 0 0"/>
+  </joint>
+</robot>

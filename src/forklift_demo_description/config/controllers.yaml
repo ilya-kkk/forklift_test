@@ -1,0 +1,14 @@
+cmd_vel_to_tricycle:
+  ros__parameters:
+    use_sim_time: true
+    input_cmd_topic: /cmd_vel
+    steering_cmd_topic: /forklift/rear_steering_cmd
+    drive_cmd_topic: /forklift/rear_wheel_cmd
+    gz_cmd_vel_topic: /model/forklift_demo/cmd_vel
+    wheelbase: 1.2
+    wheel_radius: 0.18
+    max_steering_angle: 1.48353
+    max_steering_rate: 1.4
+    max_wheel_angular_velocity: 5.0
+    deadband_linear_velocity: 0.02
+    steering_hold_when_stopped: true
