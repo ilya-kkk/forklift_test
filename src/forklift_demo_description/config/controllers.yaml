@@ -6,7 +6,7 @@ cmd_vel_to_tricycle:
     drive_cmd_topic: /forklift/rear_wheel_cmd
     gz_cmd_vel_topic: /model/forklift_demo/cmd_vel
     motion_mode_topic: /motion_mode
-    motion_mode: FORKS_FIRST
+    motion_mode: BODY_FIRST
     wheelbase: 1.2
     wheel_radius: 0.18
     max_steering_angle: 1.48353
