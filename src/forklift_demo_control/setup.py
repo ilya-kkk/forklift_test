@@ -24,6 +24,7 @@ setup(
             "hardcoded_route_sender = forklift_demo_control.hardcoded_route_sender:main",
             "map_service = forklift_demo_control.map_service:main",
             "route_service = forklift_demo_control.route_service:main",
+            "demo_route_loop = forklift_demo_control.demo_route_loop:main",
         ]
     },
 )

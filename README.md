@@ -1,71 +1,186 @@
 # ROS 2 Forklift Demo
 
-Короткое демо rear-steer погрузчика на `ROS 2 Humble + Gazebo Sim + Nav2`.
+Небольшой стенд на `ROS 2 Humble + Gazebo Sim + Nav2` для rear-steer погрузчика.
 
-Сценарий сейчас такой:
-- Gazebo запускается headless.
-- RViz запускается отдельно.
-- Робот бесконечно ездит по квадрату внутри комнаты.
-- Квадрат собран из двух `L`-маршрутов, которые отправляются по очереди.
+Система построена вокруг идеи "карта в виде графа точек и связей + сервис маршрута". Пользователь не публикует `Path` руками и не работает с координатами напрямую. Вместо этого он вызывает сервис, говорит "из точки X в точку Y, приехать front/rear", а дальше маршрут строится и исполняется автоматически.
 
-## Что здесь используется
+## Из чего состоит система
 
-- `Nav2 controller_server` без planner server и без BT navigator.
-- Контроллер пути: `nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController`.
-- `slam_toolbox` для публикации `map -> odom`.
-- `ros_gz_bridge` для `/clock`, `/scan`, `/odom`, `/tf`, `/joint_states` и управляющих топиков.
-- Кастомный узел `cmd_vel_to_tricycle`, который переводит `cmd_vel` в команды заднего рулевого и ведущего колеса.
+Основные узлы:
 
-## Как едет робот
+- `map_service`
+  Возвращает JSON-карту в формате `point/path`.
 
-Алгоритм движения разбит на два уровня:
+- `route_service`
+  Принимает запрос "откуда -> куда -> как приехать", сам запрашивает карту, строит маршрут по графу и отправляет `FollowPath` в Nav2.
 
-1. `hardcoded_route_sender.py`
-   Строит путь, уплотняет его с шагом `0.08 м`, публикует в `/demo_path` и отправляет action `FollowPath`.
+- `cmd_vel_to_tricycle`
+  Берет `cmd_vel` от Nav2 и переводит его в команды именно для нашей rear-steer кинематики: угол заднего рулевого колеса, скорость ведущего колеса и `Twist` в Gazebo.
 
-2. `controller_server`
-   Считает управляющий `cmd_vel` по `Regulated Pure Pursuit`.
+- `demo_route_loop`
+  Опциональный демонстрационный узел. Если включен, сам по кругу вызывает сервис маршрута и имитирует перевозку палеты между несколькими точками.
 
-3. `cmd_vel_to_tricycle.py`
-   Преобразует `cmd_vel` в rear-steer кинематику:
-   - считает угол заднего рулевого колеса,
-   - ограничивает скорость поворота руля,
-   - публикует скорость заднего колеса,
-   - публикует `Twist` в Gazebo.
+- `controller_server` из Nav2
+  Исполняет уже готовый путь через `RegulatedPurePursuitController`.
 
-Маршрут не один статичный отрезок. Узел по очереди шлет:
-- нижняя + правая стороны квадрата,
-- верхняя + левая стороны квадрата.
+- `slam_toolbox`
+  Публикует `map -> odom`.
 
-После успешного завершения текущей фазы сразу отправляется следующая, поэтому демо крутится бесконечно.
+- `ros_gz_bridge`
+  Связывает Gazebo и ROS по времени, лидарам, одометрии, TF, joint states и управляющим топикам.
 
-## Модель и мир
+## Кто за что отвечает
 
-- Модель робота описана в `SDF` для Gazebo и в `xacro` для `robot_state_publisher`.
-- Рулевая схема: одно заднее поворотное/ведущее колесо, два передних пассивных.
-- Лимит заднего руления: `±85°` (`±1.48353 rad`).
-- Мир максимально простой: пол и 4 стены, без внутренних препятствий.
-- На роботе стоит `gpu_lidar`.
+### `/robot_data/map/get_map`
 
-## Текущие параметры
+Сервис карты. Возвращает JSON с двумя массивами:
 
-- Размер квадрата по умолчанию: `4 x 4 м`.
-- Старт робота: `(-1, -1)`.
-- Целевая линейная скорость Nav2: `0.6 м/с`.
-- Лимит угловой скорости колеса в low-level узле: `5.0 rad/s`.
+- `point`
+  Описание точек карты: `point_id`, `alias`, координаты, метаданные.
 
-## Визуализация
+- `path`
+  Направленные связи между точками.
 
-В RViz включены:
-- `RobotModel`
-- `TF`
-- `LaserScan`
-- `Map`
-- `Path` из `/demo_path`
+Источник данных: [map_data.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/map_data.py)
 
-`Odometry` display сейчас отключен.
+Обработчик сервиса: [map_service.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/map_service.py)
+
+### `/robot_data/route/go_to_point`
+
+Сервис маршрута. Принимает JSON примерно такого вида:
+
+```json
+{
+  "start": "0001",
+  "goal": "0004",
+  "arrival_mode": "front"
+}
+```
+
+`start` и `goal` можно передавать:
+
+- по `alias`, например `"0001"`
+- по `point_id`, например `2`
+
+`arrival_mode` понимает:
+
+- `front`, `forward`, `передом`
+- `rear`, `reverse`, `backward`, `задом`
+
+Обработчик сервиса: [route_service.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/route_service.py)
+
+## Что значит `front` и `rear`
+
+В пользовательской логике:
+
+- `front` = сторона поворотных колес
+- `rear` = сторона вил и паразитных передних колес
+
+Важно: внутри низкого уровня есть свои режимы `BODY_FIRST` и `FORKS_FIRST`. Это внутренняя кинематическая деталь, а не то, что должен помнить пользователь сервиса.
+
+Текущее соответствие такое:
+
+- пользовательский `front` мапится на внутренний `FORKS_FIRST`
+- пользовательский `rear` мапится на внутренний `BODY_FIRST`
+
+## Как строится маршрут
+
+Алгоритм в [route_service.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/route_service.py) в кратце такой:
+
+1. Сервис принимает запрос `start / goal / arrival_mode`.
+2. Запрашивает карту у `/robot_data/map/get_map`.
+3. Индексирует точки:
+   - по `point_id`
+   - по `alias`
+4. Разрешает `start` и `goal` в реальные точки карты.
+5. Строит кратчайший путь по графу.
+   Вес ребра = обычное евклидово расстояние между двумя точками.
+6. Получает цепочку узлов, например `["0003", "0002", "0005"]`.
+7. Превращает эту цепочку в ломаную и дополнительно "уплотняет" ее промежуточными точками, чтобы Nav2 вел робот не по редким вершинам, а по нормальному `Path`.
+8. В зависимости от `arrival_mode` режет маршрут на сегменты:
+   - `front`: весь маршрут одним сегментом
+   - `rear`: весь маршрут, кроме последнего ребра, идет одним режимом; последний отрезок в цель идет отдельным сегментом другим режимом
+9. Перед отправкой каждого сегмента:
+   - публикует `/motion_mode`
+   - переключает параметр `FollowPath.allow_reversing` у `controller_server`
+10. Отправляет сегмент в action `follow_path`.
+
+Итог: пользователь всегда вызывает один сервис, а внутри маршрут может превратиться в 1 или 2 `FollowPath`-сегмента в зависимости от того, как нужно приехать в цель.
+
+## Как работает низкий уровень
+
+[cmd_vel_to_tricycle.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/cmd_vel_to_tricycle.py) делает следующее:
+
+- подписывается на `cmd_vel`
+- подписывается на `/motion_mode`
+- приводит линейную скорость к нужному направлению движения
+- для reverse-режима дополнительно ограничивает скорость коэффициентом `reverse_velocity_scale`
+- пересчитывает `omega`, чтобы при смене знака скорости не ломалась кривизна пути
+- считает угол заднего рулевого колеса по модели rear steering
+- ограничивает скорость изменения руля
+- публикует:
+  - угол заднего рулевого колеса
+  - скорость ведущего колеса
+  - `Twist` в Gazebo
+
+То есть Nav2 по-прежнему работает как источник `cmd_vel`, а вся специфичная кинематика погрузчика живет в одном отдельном узле.
+
+## Текущая карта
+
+Карта задается в [map_data.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/map_data.py).
+
+Точки:
+
+- `0000` / `1`: `(-4.0, -4.0)`
+- `0001` / `2`: `(-4.0, 4.0)`
+- `0002` / `3`: `(0.0, 4.0)`
+- `0003` / `4`: `(4.0, 4.0)`
+- `0004` / `5`: `(4.0, -4.0)`
+- `0005` / `6`: `(0.0, 1.0)`
+- `0006` / `7`: `(-2.0, 1.0)`
+- `0007` / `8`: `(-2.0, -4.0)`
+
+Связи:
+
+- `1 <-> 2`
+- `2 <-> 3`
+- `3 <-> 4`
+- `4 <-> 5`
+- `5 <-> 1`
+- `3 <-> 6`
+- `7 <-> 8`
+- `1 <-> 8`
+- `8 <-> 5`
+
+ASCII-схема:
+
+```text
+2 (-4,4) -------- 3 (0,4) -------- 4 (4,4)
+                     |
+                     |
+                  6 (0,1)
+
+1 (-4,-4) ---- 8 (-2,-4) -------- 5 (4,-4)
+                 |
+                 |
+              7 (-2,1)
+```
+
+Это ориентированный граф, но для большинства участков обе стороны заданы явными отдельными ребрами.
+
+## Автодемо
+
+По умолчанию launch поднимает `demo_route_loop`. Он нужен только для демонстрации без ручных сервисных вызовов.
+
+Если хочешь управлять только сервисами вручную, отключай его так:
+
+```bash
+ros2 launch forklift_demo_description sim_followpath.launch.py run_demo_loop:=false
+```
 
 ## Запуск
+
+Полный запуск:
 
 ```bash
 docker compose up --build
@@ -77,28 +192,107 @@ docker compose up --build
 docker compose up --build sim
 ```
 
-Отдельно RViz:
+Только RViz:
 
 ```bash
 docker compose up --build rviz
 ```
 
+Главный launch: [sim_followpath.launch.py](/home/user/forklift_test/src/forklift_demo_description/launch/sim_followpath.launch.py)
+
+Он поднимает:
+
+- Gazebo
+- bridge
+- `robot_state_publisher`
+- `slam_toolbox`
+- `controller_server`
+- `lifecycle_manager`
+- `cmd_vel_to_tricycle`
+- `map_service`
+- `route_service`
+- `demo_route_loop` при `run_demo_loop:=true`
+- RViz при `launch_rviz:=true`
+
+## Сборка внутри контейнера
+
+Если уже находишься в `forklift_demo_sim`:
+
+```bash
+cd /ws
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --packages-select ros2_templates forklift_demo_control
+source install/setup.bash
+```
+
+## Примеры вызова сервисов
+
+Сначала зайти в контейнер:
+
+```bash
+docker exec -it forklift_demo_sim bash
+```
+
+Потом:
+
+```bash
+cd /ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+```
+
+Получить карту:
+
+```bash
+ros2 service call /robot_data/map/get_map ros2_templates/srv/StringWithJson '{"message":"{}"}'
+```
+
+Поехать из `0001` в `0004` и приехать `front`:
+
+```bash
+ros2 service call /robot_data/route/go_to_point ros2_templates/srv/StringWithJson '{"message":"{\"start\":\"0001\",\"goal\":\"0004\",\"arrival_mode\":\"front\"}"}'
+```
+
+Поехать из `0001` в `0004` и приехать `rear`:
+
+```bash
+ros2 service call /robot_data/route/go_to_point ros2_templates/srv/StringWithJson '{"message":"{\"start\":\"0001\",\"goal\":\"0004\",\"arrival_mode\":\"rear\"}"}'
+```
+
+То же самое по `point_id`:
+
+```bash
+ros2 service call /robot_data/route/go_to_point ros2_templates/srv/StringWithJson '{"message":"{\"start\":2,\"goal\":5,\"arrival_mode\":\"front\"}"}'
+```
+
 ## Ключевые файлы
 
-- `src/forklift_demo_description/launch/sim_followpath.launch.py`
-  Главный launch, поднимает Gazebo, bridge, Nav2, SLAM, route sender и RViz.
+- [map_service.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/map_service.py)
+  Отдает карту.
 
-- `src/forklift_demo_control/forklift_demo_control/hardcoded_route_sender.py`
-  Генерация маршрута и бесконечный цикл `FollowPath`.
+- [route_service.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/route_service.py)
+  Строит путь по карте и исполняет его через Nav2.
 
-- `src/forklift_demo_control/forklift_demo_control/cmd_vel_to_tricycle.py`
-  Перевод `cmd_vel` в rear-steer команды.
+- [cmd_vel_to_tricycle.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/cmd_vel_to_tricycle.py)
+  Преобразует `cmd_vel` в команды rear-steer базы.
 
-- `src/forklift_demo_description/config/nav2_params.yaml`
-  Конфиг `RegulatedPurePursuitController`.
+- [demo_route_loop.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/demo_route_loop.py)
+  Автоматический демонстрационный цикл.
 
-- `src/forklift_demo_description/models/forklift_demo/model.sdf`
-  Физическая модель робота в Gazebo.
+- [map_data.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/map_data.py)
+  Описание точек и ребер графа.
 
-- `src/forklift_demo_description/worlds/square_room.sdf`
-  Простой world без препятствий.
+- [controllers.yaml](/home/user/forklift_test/src/forklift_demo_description/config/controllers.yaml)
+  Параметры low-level узла `cmd_vel_to_tricycle`.
+
+- [nav2_params.yaml](/home/user/forklift_test/src/forklift_demo_description/config/nav2_params.yaml)
+  Параметры `RegulatedPurePursuitController` и local costmap.
+
+- [forklift_demo.urdf.xacro](/home/user/forklift_test/src/forklift_demo_description/urdf/forklift_demo.urdf.xacro)
+  URDF/xacro для `robot_state_publisher`.
+
+- [model.sdf](/home/user/forklift_test/src/forklift_demo_description/models/forklift_demo/model.sdf)
+  Gazebo-модель робота.
+
+- [StringWithJson.srv](/home/user/forklift_test/src/ros2_templates/srv/StringWithJson.srv)
+  Общий сервисный интерфейс JSON-запросов и JSON-ответов.

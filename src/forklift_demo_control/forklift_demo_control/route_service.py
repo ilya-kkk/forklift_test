@@ -26,6 +26,10 @@ BODY_FIRST = "BODY_FIRST"
 FORKS_FIRST = "FORKS_FIRST"
 FRONT_ARRIVAL = "front"
 REAR_ARRIVAL = "rear"
+# User-facing "front" is the steering-wheel side of the robot, which is the
+# negative-x side in the current model and therefore maps to FORKS_FIRST.
+FRONT_MOTION_MODE = FORKS_FIRST
+REAR_MOTION_MODE = BODY_FIRST
 
 Point2D = Tuple[float, float]
 
@@ -525,9 +529,9 @@ class RouteServiceNode(Node):
         if normalized in {
             "front",
             "forward",
-            "body_first",
-            "body-first",
-            "bodyfirst",
+            "forks_first",
+            "forks-first",
+            "forksfirst",
             "передом",
             "перед",
         }:
@@ -536,9 +540,9 @@ class RouteServiceNode(Node):
             "rear",
             "reverse",
             "backward",
-            "forks_first",
-            "forks-first",
-            "forksfirst",
+            "body_first",
+            "body-first",
+            "bodyfirst",
             "задом",
             "зад",
         }:
@@ -707,9 +711,9 @@ class RouteServiceNode(Node):
             return [
                 PlannedSegment(
                     name="route_full_front",
-                    path=self._build_segment_path(route_points, BODY_FIRST),
-                    motion_mode=BODY_FIRST,
-                    allow_reversing=False,
+                    path=self._build_segment_path(route_points, FRONT_MOTION_MODE),
+                    motion_mode=FRONT_MOTION_MODE,
+                    allow_reversing=True,
                 )
             ]
 
@@ -718,17 +722,17 @@ class RouteServiceNode(Node):
             segments.append(
                 PlannedSegment(
                     name="route_prefix_front",
-                    path=self._build_segment_path(route_points[:-1], BODY_FIRST),
-                    motion_mode=BODY_FIRST,
-                    allow_reversing=False,
+                    path=self._build_segment_path(route_points[:-1], FRONT_MOTION_MODE),
+                    motion_mode=FRONT_MOTION_MODE,
+                    allow_reversing=True,
                 )
             )
         segments.append(
             PlannedSegment(
                 name="route_final_rear",
-                path=self._build_segment_path(route_points[-2:], FORKS_FIRST),
-                motion_mode=FORKS_FIRST,
-                allow_reversing=True,
+                path=self._build_segment_path(route_points[-2:], REAR_MOTION_MODE),
+                motion_mode=REAR_MOTION_MODE,
+                allow_reversing=False,
             )
         )
         return segments

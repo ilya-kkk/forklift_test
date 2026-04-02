@@ -13,6 +13,7 @@ def generate_launch_description() -> LaunchDescription:
 
     use_sim_time = LaunchConfiguration("use_sim_time")
     launch_rviz = LaunchConfiguration("launch_rviz")
+    run_demo_loop = LaunchConfiguration("run_demo_loop")
     world = LaunchConfiguration("world")
     x = LaunchConfiguration("x")
     y = LaunchConfiguration("y")
@@ -127,6 +128,14 @@ def generate_launch_description() -> LaunchDescription:
             parameters=[{"use_sim_time": use_sim_time}],
         ),
         Node(
+            package="forklift_demo_control",
+            executable="demo_route_loop",
+            name="demo_route_loop",
+            output="screen",
+            parameters=[{"use_sim_time": use_sim_time}],
+            condition=IfCondition(run_demo_loop),
+        ),
+        Node(
             package="rviz2",
             executable="rviz2",
             output="screen",
@@ -140,6 +149,7 @@ def generate_launch_description() -> LaunchDescription:
         [
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("launch_rviz", default_value="false"),
+            DeclareLaunchArgument("run_demo_loop", default_value="true"),
             DeclareLaunchArgument(
                 "world",
                 default_value=PathJoinSubstitution(

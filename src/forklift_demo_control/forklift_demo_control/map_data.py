@@ -13,6 +13,8 @@ def build_demo_map() -> MapJson:
         _build_point(alias="0003", point_id=4, x=4.0, y=4.0, marker_id=3),
         _build_point(alias="0004", point_id=5, x=4.0, y=-4.0, marker_id=4),
         _build_point(alias="0005", point_id=6, x=0.0, y=1.0, marker_id=5),
+        _build_point(alias="0006", point_id=7, x=-2.0, y=1.0, marker_id=6),
+        _build_point(alias="0007", point_id=8, x=-2.0, y=-4.0, marker_id=7),
     ]
 
     paths = [
@@ -28,6 +30,12 @@ def build_demo_map() -> MapJson:
         _build_path(start_point_id=1, end_point_id=5, direction="backward"),
         _build_path(start_point_id=3, end_point_id=6, direction="forward"),
         _build_path(start_point_id=6, end_point_id=3, direction="backward"),
+        _build_path(start_point_id=7, end_point_id=8, direction="forward"),
+        _build_path(start_point_id=8, end_point_id=7, direction="backward"),
+        _build_path(start_point_id=1, end_point_id=8, direction="forward"),
+        _build_path(start_point_id=8, end_point_id=1, direction="backward"),
+        _build_path(start_point_id=8, end_point_id=5, direction="forward"),
+        _build_path(start_point_id=5, end_point_id=8, direction="backward"),
     ]
     return {"point": points, "path": paths}
 
