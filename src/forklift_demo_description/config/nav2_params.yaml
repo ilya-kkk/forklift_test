@@ -55,7 +55,7 @@ local_costmap:
       update_frequency: 10.0
       publish_frequency: 5.0
       always_send_full_costmap: true
-      footprint: "[[0.60, 0.35], [0.60, -0.35], [-0.60, -0.35], [-0.60, 0.35]]"
+      footprint: "[[0.92, 0.42], [0.92, -0.42], [-0.56, -0.42], [-0.56, 0.42]]"
       plugins: ["obstacle_layer", "inflation_layer"]
 
       obstacle_layer:

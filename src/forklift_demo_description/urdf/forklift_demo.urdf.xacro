@@ -1,14 +1,17 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="forklift_demo">
   <xacro:arg name="use_sim_time" default="true"/>
-  <xacro:arg name="base_length" default="1.2"/>
+  <xacro:arg name="base_length" default="0.36"/>
   <xacro:arg name="base_width" default="0.8"/>
   <xacro:arg name="base_height" default="0.32"/>
+  <xacro:arg name="body_x_offset" default="-0.38"/>
   <xacro:arg name="wheel_radius" default="0.18"/>
   <xacro:arg name="wheel_width" default="0.08"/>
+  <xacro:arg name="passive_wheel_radius" default="0.045"/>
+  <xacro:arg name="passive_wheel_width" default="0.02"/>
   <xacro:arg name="wheelbase" default="1.2"/>
   <xacro:arg name="max_steering_angle" default="1.48353"/>
-  <xacro:arg name="laser_x" default="0.2"/>
+  <xacro:arg name="laser_x" default="-0.38"/>
   <xacro:arg name="laser_z" default="0.55"/>
 
   <material name="body_orange">
@@ -25,30 +28,23 @@
 
   <link name="base_link">
     <visual>
-      <origin xyz="0 0 0.25" rpy="0 0 0"/>
+      <origin xyz="$(arg body_x_offset) 0 0.25" rpy="0 0 0"/>
       <geometry>
         <box size="$(arg base_length) $(arg base_width) $(arg base_height)"/>
       </geometry>
       <material name="body_orange"/>
     </visual>
     <visual>
-      <origin xyz="0.60 0 0.18" rpy="0 0 0"/>
+      <origin xyz="0.36 0.35 0.10" rpy="0 0 0"/>
       <geometry>
-        <box size="0.08 0.46 0.18"/>
+        <box size="1.12 0.14 0.04"/>
       </geometry>
       <material name="fork_steel"/>
     </visual>
     <visual>
-      <origin xyz="0.88 0.18 0.10" rpy="0 0 0"/>
+      <origin xyz="0.36 -0.35 0.10" rpy="0 0 0"/>
       <geometry>
-        <box size="0.56 0.08 0.04"/>
-      </geometry>
-      <material name="fork_steel"/>
-    </visual>
-    <visual>
-      <origin xyz="0.88 -0.18 0.10" rpy="0 0 0"/>
-      <geometry>
-        <box size="0.56 0.08 0.04"/>
+        <box size="1.12 0.14 0.04"/>
       </geometry>
       <material name="fork_steel"/>
     </visual>
@@ -58,7 +54,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
       <geometry>
-        <cylinder radius="$(arg wheel_radius)" length="$(arg wheel_width)"/>
+        <cylinder radius="$(arg passive_wheel_radius)" length="$(arg passive_wheel_width)"/>
       </geometry>
       <material name="wheel_black"/>
     </visual>
@@ -68,7 +64,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
       <geometry>
-        <cylinder radius="$(arg wheel_radius)" length="$(arg wheel_width)"/>
+        <cylinder radius="$(arg passive_wheel_radius)" length="$(arg passive_wheel_width)"/>
       </geometry>
       <material name="wheel_black"/>
     </visual>
@@ -77,14 +73,14 @@
   <joint name="front_left_wheel_joint" type="continuous">
     <parent link="base_link"/>
     <child link="front_left_wheel_link"/>
-    <origin xyz="0.42 0.35 0.18" rpy="0 0 0"/>
+    <origin xyz="0.42 0.35 0.045" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
   </joint>
 
   <joint name="front_right_wheel_joint" type="continuous">
     <parent link="base_link"/>
     <child link="front_right_wheel_link"/>
-    <origin xyz="0.42 -0.35 0.18" rpy="0 0 0"/>
+    <origin xyz="0.42 -0.35 0.045" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
   </joint>
 

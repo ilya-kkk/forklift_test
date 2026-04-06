@@ -19,16 +19,18 @@
         </inertia>
       </inertial>
       <collision name="base_collision">
+        <pose>-0.38 0 0 0 0 0</pose>
         <geometry>
           <box>
-            <size>1.2 0.8 0.32</size>
+            <size>0.36 0.8 0.32</size>
           </box>
         </geometry>
       </collision>
       <visual name="base_visual">
+        <pose>-0.38 0 0 0 0 0</pose>
         <geometry>
           <box>
-            <size>1.2 0.8 0.32</size>
+            <size>0.36 0.8 0.32</size>
           </box>
         </geometry>
         <material>
@@ -36,23 +38,11 @@
           <diffuse>0.90 0.62 0.18 1.0</diffuse>
         </material>
       </visual>
-      <visual name="fork_carriage_visual">
-        <pose>0.60 0 -0.07 0 0 0</pose>
-        <geometry>
-          <box>
-            <size>0.08 0.46 0.18</size>
-          </box>
-        </geometry>
-        <material>
-          <ambient>0.72 0.72 0.72 1.0</ambient>
-          <diffuse>0.72 0.72 0.72 1.0</diffuse>
-        </material>
-      </visual>
       <visual name="left_fork_visual">
-        <pose>0.88 0.18 -0.15 0 0 0</pose>
+        <pose>0.36 0.35 -0.15 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.56 0.08 0.04</size>
+            <size>1.12 0.14 0.04</size>
           </box>
         </geometry>
         <material>
@@ -61,10 +51,10 @@
         </material>
       </visual>
       <visual name="right_fork_visual">
-        <pose>0.88 -0.18 -0.15 0 0 0</pose>
+        <pose>0.36 -0.35 -0.15 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.56 0.08 0.04</size>
+            <size>1.12 0.14 0.04</size>
           </box>
         </geometry>
         <material>
@@ -75,13 +65,13 @@
     </link>
 
     <link name="front_left_wheel_link">
-      <pose>0.42 0.35 0.18 0 0 0</pose>
+      <pose>0.42 0.35 0.045 0 0 0</pose>
       <inertial>
-        <mass>1.0</mass>
+        <mass>0.1</mass>
         <inertia>
-          <ixx>0.02</ixx>
-          <iyy>0.01</iyy>
-          <izz>0.02</izz>
+          <ixx>0.0005</ixx>
+          <iyy>0.00025</iyy>
+          <izz>0.0005</izz>
           <ixy>0.0</ixy>
           <ixz>0.0</ixz>
           <iyz>0.0</iyz>
@@ -91,8 +81,8 @@
         <pose>0 0 0 1.57079632679 0 0</pose>
         <geometry>
           <cylinder>
-            <radius>0.18</radius>
-            <length>0.08</length>
+            <radius>0.045</radius>
+            <length>0.02</length>
           </cylinder>
         </geometry>
       </collision>
@@ -100,8 +90,8 @@
         <pose>0 0 0 1.57079632679 0 0</pose>
         <geometry>
           <cylinder>
-            <radius>0.18</radius>
-            <length>0.08</length>
+            <radius>0.045</radius>
+            <length>0.02</length>
           </cylinder>
         </geometry>
         <material>
@@ -112,13 +102,13 @@
     </link>
 
     <link name="front_right_wheel_link">
-      <pose>0.42 -0.35 0.18 0 0 0</pose>
+      <pose>0.42 -0.35 0.045 0 0 0</pose>
       <inertial>
-        <mass>1.0</mass>
+        <mass>0.1</mass>
         <inertia>
-          <ixx>0.02</ixx>
-          <iyy>0.01</iyy>
-          <izz>0.02</izz>
+          <ixx>0.0005</ixx>
+          <iyy>0.00025</iyy>
+          <izz>0.0005</izz>
           <ixy>0.0</ixy>
           <ixz>0.0</ixz>
           <iyz>0.0</iyz>
@@ -128,8 +118,8 @@
         <pose>0 0 0 1.57079632679 0 0</pose>
         <geometry>
           <cylinder>
-            <radius>0.18</radius>
-            <length>0.08</length>
+            <radius>0.045</radius>
+            <length>0.02</length>
           </cylinder>
         </geometry>
       </collision>
@@ -137,8 +127,8 @@
         <pose>0 0 0 1.57079632679 0 0</pose>
         <geometry>
           <cylinder>
-            <radius>0.18</radius>
-            <length>0.08</length>
+            <radius>0.045</radius>
+            <length>0.02</length>
           </cylinder>
         </geometry>
         <material>
@@ -333,7 +323,7 @@
     </joint>
 
     <link name="laser_link">
-      <pose>0.2 0.0 0.55 0 0 0</pose>
+      <pose>-0.38 0.0 0.55 0 0 0</pose>
       <inertial>
         <mass>0.2</mass>
         <inertia>

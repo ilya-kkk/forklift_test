@@ -19,7 +19,12 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from ros2_templates.srv import StringWithJson
 from std_msgs.msg import String
 
-from forklift_demo_control.path_utils import build_path, densify_polyline
+from forklift_demo_control.path_utils import (
+    build_path,
+    densify_polyline,
+    is_right_angle_corner,
+    smooth_right_angle_corners,
+)
 
 
 BODY_FIRST = "BODY_FIRST"
@@ -56,6 +61,9 @@ class RouteServiceNode(Node):
 
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("path_resolution", 0.08)
+        self.declare_parameter("rounded_corner_radius", 1.0)
+        self.declare_parameter("right_angle_tolerance_deg", 15.0)
+        self.declare_parameter("rear_entry_extension", 1.0)
         self.declare_parameter("controller_id", "FollowPath")
         self.declare_parameter("goal_checker_id", "goal_checker")
         self.declare_parameter("path_topic", "/demo_path")
@@ -70,6 +78,15 @@ class RouteServiceNode(Node):
 
         self._frame_id = str(self.get_parameter("frame_id").value)
         self._path_resolution = float(self.get_parameter("path_resolution").value)
+        self._rounded_corner_radius = float(
+            self.get_parameter("rounded_corner_radius").value
+        )
+        self._right_angle_tolerance_deg = float(
+            self.get_parameter("right_angle_tolerance_deg").value
+        )
+        self._rear_entry_extension = float(
+            self.get_parameter("rear_entry_extension").value
+        )
         self._controller_id = str(self.get_parameter("controller_id").value)
         self._goal_checker_id = str(self.get_parameter("goal_checker_id").value)
         self._controller_reverse_param = str(
@@ -569,13 +586,10 @@ class RouteServiceNode(Node):
             for point_id in route_point_ids
         ]
         route_aliases = [str(points_by_id[point_id]["alias"]) for point_id in route_point_ids]
-        preview_points = densify_polyline(route_points, self._path_resolution)
-        preview_path = build_path(
-            preview_points,
-            self._frame_id,
-            self.get_clock().now().to_msg(),
+        segments, preview_points = self._build_segments(
+            route_points, request_data["arrival_mode"]
         )
-        segments = self._build_segments(route_points, request_data["arrival_mode"])
+        preview_path = self._build_preview_path(preview_points)
         summary = {
             "request_id": request_id,
             "start_point_id": start_point["point_id"],
@@ -703,41 +717,84 @@ class RouteServiceNode(Node):
 
     def _build_segments(
         self, route_points: Sequence[Point2D], arrival_mode: str
-    ) -> List[PlannedSegment]:
+    ) -> Tuple[List[PlannedSegment], List[Point2D]]:
         if len(route_points) == 1:
-            return []
+            return [], list(route_points)
 
         if arrival_mode == FRONT_ARRIVAL:
-            return [
-                PlannedSegment(
-                    name="route_full_front",
-                    path=self._build_segment_path(route_points, FRONT_MOTION_MODE),
-                    motion_mode=FRONT_MOTION_MODE,
-                    allow_reversing=True,
-                )
-            ]
+            segment, preview_points = self._create_segment(
+                name="route_full_front",
+                route_points=route_points,
+                motion_mode=FRONT_MOTION_MODE,
+                allow_reversing=True,
+            )
+            return [segment], preview_points
 
         segments: List[PlannedSegment] = []
-        if len(route_points) > 2:
-            segments.append(
-                PlannedSegment(
-                    name="route_prefix_front",
-                    path=self._build_segment_path(route_points[:-1], FRONT_MOTION_MODE),
-                    motion_mode=FRONT_MOTION_MODE,
-                    allow_reversing=True,
-                )
-            )
-        segments.append(
-            PlannedSegment(
-                name="route_final_rear",
-                path=self._build_segment_path(route_points[-2:], REAR_MOTION_MODE),
-                motion_mode=REAR_MOTION_MODE,
-                allow_reversing=False,
-            )
-        )
-        return segments
+        preview_points: List[Point2D] = []
 
-    def _build_segment_path(
+        prefix_route_points = list(route_points[:-1])
+        rear_route_points = list(route_points[-2:])
+        if self._should_use_rear_turn_maneuver(route_points):
+            overshoot_point = self._extend_point(
+                route_points[-3],
+                route_points[-2],
+                self._rear_entry_extension,
+            )
+            prefix_route_points.append(overshoot_point)
+            rear_route_points = [overshoot_point, route_points[-2], route_points[-1]]
+
+        if len(prefix_route_points) > 1:
+            prefix_segment, prefix_points = self._create_segment(
+                name="route_prefix_front",
+                route_points=prefix_route_points,
+                motion_mode=FRONT_MOTION_MODE,
+                allow_reversing=True,
+            )
+            segments.append(prefix_segment)
+            preview_points = prefix_points
+
+        rear_segment, rear_points = self._create_segment(
+            name="route_final_rear",
+            route_points=rear_route_points,
+            motion_mode=REAR_MOTION_MODE,
+            allow_reversing=False,
+        )
+        segments.append(rear_segment)
+        preview_points = self._merge_route_points(preview_points, rear_points)
+        return segments, preview_points
+
+    def _create_segment(
+        self,
+        *,
+        name: str,
+        route_points: Sequence[Point2D],
+        motion_mode: str,
+        allow_reversing: bool,
+    ) -> Tuple[PlannedSegment, List[Point2D]]:
+        shaped_points = self._shape_route_points(route_points)
+        return (
+            PlannedSegment(
+                name=name,
+                path=self._build_path_from_points(shaped_points, motion_mode),
+                motion_mode=motion_mode,
+                allow_reversing=allow_reversing,
+            ),
+            shaped_points,
+        )
+
+    def _shape_route_points(self, route_points: Sequence[Point2D]) -> List[Point2D]:
+        return smooth_right_angle_corners(
+            route_points,
+            radius=self._rounded_corner_radius,
+            resolution=self._path_resolution,
+            tolerance_degrees=self._right_angle_tolerance_deg,
+        )
+
+    def _build_preview_path(self, route_points: Sequence[Point2D]) -> Path:
+        return self._build_path_from_points(route_points, BODY_FIRST)
+
+    def _build_path_from_points(
         self, route_points: Sequence[Point2D], motion_mode: str
     ) -> Path:
         yaw_offset = math.pi if motion_mode == FORKS_FIRST else 0.0
@@ -748,6 +805,59 @@ class RouteServiceNode(Node):
             self.get_clock().now().to_msg(),
             yaw_offset=yaw_offset,
         )
+
+    def _should_use_rear_turn_maneuver(
+        self, route_points: Sequence[Point2D]
+    ) -> bool:
+        return (
+            len(route_points) > 2
+            and self._rear_entry_extension > 0.0
+            and self._rounded_corner_radius > 0.0
+            and is_right_angle_corner(
+                route_points,
+                len(route_points) - 2,
+                tolerance_degrees=self._right_angle_tolerance_deg,
+            )
+        )
+
+    def _extend_point(
+        self,
+        start_point: Point2D,
+        end_point: Point2D,
+        distance: float,
+    ) -> Point2D:
+        if distance <= 0.0:
+            return end_point
+
+        delta_x = end_point[0] - start_point[0]
+        delta_y = end_point[1] - start_point[1]
+        length = math.hypot(delta_x, delta_y)
+        if length < 1e-9:
+            return end_point
+
+        scale = distance / length
+        return (
+            end_point[0] + delta_x * scale,
+            end_point[1] + delta_y * scale,
+        )
+
+    def _merge_route_points(
+        self,
+        first_points: Sequence[Point2D],
+        second_points: Sequence[Point2D],
+    ) -> List[Point2D]:
+        if not first_points:
+            return list(second_points)
+        if not second_points:
+            return list(first_points)
+
+        if math.hypot(
+            first_points[-1][0] - second_points[0][0],
+            first_points[-1][1] - second_points[0][1],
+        ) < 1e-9:
+            return list(first_points) + list(second_points[1:])
+
+        return list(first_points) + list(second_points)
 
 
 def main(args=None) -> None:

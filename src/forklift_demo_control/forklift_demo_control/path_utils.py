@@ -149,6 +149,81 @@ def round_polyline_corner(
     return rounded_points
 
 
+def polyline_corner_angle(
+    points: Sequence[Point2D], corner_index: int
+) -> float | None:
+    if len(points) < 3:
+        return None
+
+    if corner_index <= 0 or corner_index >= len(points) - 1:
+        raise ValueError("corner_index must refer to an interior point")
+
+    previous_point = points[corner_index - 1]
+    corner_point = points[corner_index]
+    next_point = points[corner_index + 1]
+
+    in_dx = corner_point[0] - previous_point[0]
+    in_dy = corner_point[1] - previous_point[1]
+    out_dx = next_point[0] - corner_point[0]
+    out_dy = next_point[1] - corner_point[1]
+
+    in_length = math.hypot(in_dx, in_dy)
+    out_length = math.hypot(out_dx, out_dy)
+    if in_length < 1e-9 or out_length < 1e-9:
+        return None
+
+    in_unit = (in_dx / in_length, in_dy / in_length)
+    out_unit = (out_dx / out_length, out_dy / out_length)
+    dot_product = max(-1.0, min(1.0, in_unit[0] * out_unit[0] + in_unit[1] * out_unit[1]))
+    return math.acos(dot_product)
+
+
+def is_right_angle_corner(
+    points: Sequence[Point2D],
+    corner_index: int,
+    tolerance_degrees: float = 15.0,
+) -> bool:
+    if tolerance_degrees < 0.0:
+        raise ValueError("tolerance_degrees must be >= 0")
+
+    turn_angle = polyline_corner_angle(points, corner_index)
+    if turn_angle is None:
+        return False
+
+    return abs(turn_angle - (math.pi * 0.5)) <= math.radians(tolerance_degrees)
+
+
+def smooth_right_angle_corners(
+    points: Sequence[Point2D],
+    radius: float,
+    resolution: float,
+    tolerance_degrees: float = 15.0,
+) -> List[Point2D]:
+    if len(points) < 3 or radius <= 0.0:
+        return list(points)
+
+    if resolution <= 0.0:
+        raise ValueError("resolution must be > 0")
+
+    rounded_points = list(points)
+    for corner_index in range(len(points) - 2, 0, -1):
+        if not is_right_angle_corner(
+            rounded_points,
+            corner_index,
+            tolerance_degrees=tolerance_degrees,
+        ):
+            continue
+
+        rounded_points = round_polyline_corner(
+            rounded_points,
+            corner_index=corner_index,
+            radius=radius,
+            resolution=resolution,
+        )
+
+    return rounded_points
+
+
 def reverse_points(points: Iterable[Point2D]) -> List[Point2D]:
     return list(reversed(list(points)))
 
