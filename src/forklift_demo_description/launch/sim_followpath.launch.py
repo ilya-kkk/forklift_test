@@ -25,6 +25,9 @@ def generate_launch_description() -> LaunchDescription:
     gazebo_model = PathJoinSubstitution(
         [pkg_share, "models", "forklift_demo", "model.sdf"]
     )
+    pallet_model = PathJoinSubstitution(
+        [pkg_share, "models", "euro_pallet", "model.sdf"]
+    )
     bridge_config = PathJoinSubstitution([pkg_share, "config", "bridge_config.yaml"])
     nav2_params = PathJoinSubstitution([pkg_share, "config", "nav2_params.yaml"])
     slam_params = PathJoinSubstitution([pkg_share, "config", "slam_toolbox.yaml"])
@@ -39,7 +42,7 @@ def generate_launch_description() -> LaunchDescription:
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([ros_gz_sim_share, "launch", "gz_sim.launch.py"])
         ),
-        launch_arguments={"gz_args": ["-s -r -v 2 ", world]}.items(),
+        launch_arguments={"gz_args": ["-r -v 2 ", world]}.items(),
     )
 
     spawn_robot = Node(
@@ -61,6 +64,28 @@ def generate_launch_description() -> LaunchDescription:
             "0.18",
             "-Y",
             yaw,
+        ],
+    )
+
+    spawn_pallet = Node(
+        package="ros_gz_sim",
+        executable="create",
+        output="screen",
+        arguments=[
+            "-name",
+            "euro_pallet_point_6",
+            "-world",
+            "demo_room",
+            "-file",
+            pallet_model,
+            "-x",
+            "0.0",
+            "-y",
+            "0.64",
+            "-z",
+            "0.0",
+            "-Y",
+            "1.57079632679",
         ],
     )
 
@@ -115,6 +140,21 @@ def generate_launch_description() -> LaunchDescription:
         ),
         Node(
             package="forklift_demo_control",
+            executable="scan_sector_filter",
+            name="scan_sector_filter",
+            output="screen",
+            parameters=[
+                {
+                    "use_sim_time": use_sim_time,
+                    "input_scan_topic": "/scan_raw",
+                    "output_scan_topic": "/scan",
+                    "blind_sector_center_deg": 0.0,
+                    "blind_sector_half_width_deg": 32.0,
+                }
+            ],
+        ),
+        Node(
+            package="forklift_demo_control",
             executable="map_service",
             name="map_service",
             output="screen",
@@ -134,6 +174,14 @@ def generate_launch_description() -> LaunchDescription:
             output="screen",
             parameters=[{"use_sim_time": use_sim_time}],
             condition=IfCondition(run_demo_loop),
+        ),
+        Node(
+            package="forklift_demo_control",
+            executable="rviz_teleop_marker",
+            name="rviz_teleop_marker",
+            output="screen",
+            parameters=[{"use_sim_time": use_sim_time}],
+            condition=IfCondition(launch_rviz),
         ),
         Node(
             package="rviz2",
@@ -156,12 +204,12 @@ def generate_launch_description() -> LaunchDescription:
                     [pkg_share, "worlds", "square_room.sdf"]
                 ),
             ),
-            DeclareLaunchArgument("x", default_value="-1.0"),
-            DeclareLaunchArgument("y", default_value="-1.0"),
+            DeclareLaunchArgument("x", default_value="3.0"),
+            DeclareLaunchArgument("y", default_value="3.5"),
             DeclareLaunchArgument("yaw", default_value="0.0"),
             gazebo,
             bridge,
-            TimerAction(period=2.0, actions=[spawn_robot]),
+            TimerAction(period=2.0, actions=[spawn_robot, spawn_pallet]),
             *nodes,
         ]
     )

@@ -7,6 +7,7 @@ from nav_msgs.msg import Odometry
 from rclpy.duration import Duration
 from rclpy.node import Node
 from ros2_templates.srv import StringWithJson
+from std_msgs.msg import Float64
 
 
 Point2D = Tuple[float, float]
@@ -26,10 +27,15 @@ class DemoRouteLoop(Node):
         self.declare_parameter("target_point_4_id", 4)
         self.declare_parameter("target_point_6_id", 6)
         self.declare_parameter("target_point_7_id", 7)
+        self.declare_parameter("fork_lift_topic", "/forklift/fork_lift_cmd")
+        self.declare_parameter("fork_lift_lowered", 0.0)
+        self.declare_parameter("fork_lift_raised", 0.24)
+        self.declare_parameter("fork_lift_settle_sec", 2.0)
 
         map_service_name = str(self.get_parameter("map_service_name").value)
         route_service_name = str(self.get_parameter("route_service_name").value)
         odom_topic = str(self.get_parameter("odom_topic").value)
+        fork_lift_topic = str(self.get_parameter("fork_lift_topic").value)
         self._tick_period = float(self.get_parameter("tick_period_sec").value)
         self._goal_tolerance = float(self.get_parameter("goal_tolerance").value)
         self._goal_hold_sec = float(self.get_parameter("goal_hold_sec").value)
@@ -37,9 +43,19 @@ class DemoRouteLoop(Node):
         self._target_point_4_id = int(self.get_parameter("target_point_4_id").value)
         self._target_point_6_id = int(self.get_parameter("target_point_6_id").value)
         self._target_point_7_id = int(self.get_parameter("target_point_7_id").value)
+        self._fork_lift_lowered = float(
+            self.get_parameter("fork_lift_lowered").value
+        )
+        self._fork_lift_raised = float(
+            self.get_parameter("fork_lift_raised").value
+        )
+        self._fork_lift_settle_sec = float(
+            self.get_parameter("fork_lift_settle_sec").value
+        )
 
         self._map_client = self.create_client(StringWithJson, map_service_name)
         self._route_client = self.create_client(StringWithJson, route_service_name)
+        self._fork_lift_publisher = self.create_publisher(Float64, fork_lift_topic, 10)
         self.create_subscription(Odometry, odom_topic, self._odom_callback, 10)
         self.create_timer(self._tick_period, self._tick)
 
@@ -52,6 +68,8 @@ class DemoRouteLoop(Node):
         self._bootstrap_completed = False
         self._active_leg = None
         self._cycle_index = 0
+        self._fork_lift_target = self._fork_lift_lowered
+        self._startup_fork_lowering_completed = False
 
         self._cycle_legs = [
             {
@@ -88,6 +106,8 @@ class DemoRouteLoop(Node):
         )
 
     def _tick(self) -> None:
+        self._publish_fork_lift_target()
+
         if self.get_clock().now() < self._next_action_time:
             return
 
@@ -99,6 +119,18 @@ class DemoRouteLoop(Node):
             return
 
         if self._route_request_in_flight:
+            return
+
+        if not self._startup_fork_lowering_completed:
+            self._startup_fork_lowering_completed = True
+            self._fork_lift_target = self._fork_lift_lowered
+            self.get_logger().info(
+                "Lowering forks to minimum before first movement target=%.2f"
+                % self._fork_lift_target
+            )
+            self._next_action_time = self.get_clock().now() + Duration(
+                seconds=self._fork_lift_settle_sec
+            )
             return
 
         if self._active_leg is None:
@@ -201,12 +233,21 @@ class DemoRouteLoop(Node):
             if start_point_id is None:
                 return
 
-            leg = {
-                "name": "bootstrap_to_4_rear",
-                "start": start_point_id,
-                "goal": self._target_point_4_id,
-                "arrival_mode": "rear",
-            }
+            if start_point_id == self._target_point_4_id:
+                self._bootstrap_completed = True
+                self._cycle_index = 0
+                self.get_logger().info(
+                    "Skipping bootstrap: nearest point is already target point %d"
+                    % self._target_point_4_id
+                )
+                leg = dict(self._cycle_legs[self._cycle_index])
+            else:
+                leg = {
+                    "name": "bootstrap_to_4_rear",
+                    "start": start_point_id,
+                    "goal": self._target_point_4_id,
+                    "arrival_mode": "rear",
+                }
         else:
             leg = dict(self._cycle_legs[self._cycle_index])
 
@@ -262,6 +303,14 @@ class DemoRouteLoop(Node):
         if self._active_leg is None:
             return
 
+        next_action_delay = 0.2
+        if self._active_leg["name"] == "4_to_6_rear":
+            self._set_fork_lift_target(self._fork_lift_raised, "raise")
+            next_action_delay = self._fork_lift_settle_sec
+        elif self._active_leg["name"] == "6_to_7_rear":
+            self._set_fork_lift_target(self._fork_lift_lowered, "lower")
+            next_action_delay = self._fork_lift_settle_sec
+
         if not self._bootstrap_completed:
             self._bootstrap_completed = True
             self._cycle_index = 0
@@ -270,7 +319,9 @@ class DemoRouteLoop(Node):
 
         self._active_leg = None
         self._arrival_since = None
-        self._next_action_time = self.get_clock().now() + Duration(seconds=0.2)
+        self._next_action_time = self.get_clock().now() + Duration(
+            seconds=next_action_delay
+        )
 
     def _nearest_point_id(self) -> Optional[int]:
         if self._latest_position is None or not self._points_by_id:
@@ -293,6 +344,8 @@ class DemoRouteLoop(Node):
         self._active_leg = None
         self._cycle_index = 0
         self._arrival_since = None
+        self._fork_lift_target = self._fork_lift_lowered
+        self._startup_fork_lowering_completed = False
         self._next_action_time = self.get_clock().now() + Duration(
             seconds=self._retry_delay_sec
         )
@@ -301,6 +354,20 @@ class DemoRouteLoop(Node):
         self._latest_position = (
             float(message.pose.pose.position.x),
             float(message.pose.pose.position.y),
+        )
+
+    def _publish_fork_lift_target(self) -> None:
+        message = Float64()
+        message.data = self._fork_lift_target
+        self._fork_lift_publisher.publish(message)
+
+    def _set_fork_lift_target(self, value: float, action: str) -> None:
+        if abs(self._fork_lift_target - value) < 1e-9:
+            return
+
+        self._fork_lift_target = value
+        self.get_logger().info(
+            "Fork lift command: %s to %.2f" % (action, self._fork_lift_target)
         )
 
 

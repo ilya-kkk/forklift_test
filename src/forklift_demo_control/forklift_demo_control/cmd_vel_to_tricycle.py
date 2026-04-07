@@ -28,7 +28,7 @@ class CmdVelToTricycle(Node):
         self.declare_parameter("motion_mode", BODY_FIRST)
         self.declare_parameter("wheelbase", 1.2)
         self.declare_parameter("wheel_radius", 0.18)
-        self.declare_parameter("max_steering_angle", 1.48353)
+        self.declare_parameter("max_steering_angle", 1.57079632679)
         self.declare_parameter("max_steering_rate", 1.4)
         self.declare_parameter("max_wheel_angular_velocity", 5.0)
         self.declare_parameter("reverse_velocity_scale", 0.5)

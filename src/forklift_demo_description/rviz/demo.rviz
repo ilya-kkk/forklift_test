@@ -42,6 +42,14 @@ Visualization Manager:
       Show Axes: true
       Show Names: true
       Value: true
+    - Class: rviz_default_plugins/InteractiveMarkers
+      Enabled: true
+      Name: TeleopJoystick
+      Show Axes: false
+      Show Descriptions: true
+      Show Visual Aids: true
+      Update Topic: /forklift_teleop/update
+      Value: true
     - Class: rviz_default_plugins/LaserScan
       Color: 255; 85; 0
       Enabled: true

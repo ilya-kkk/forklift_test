@@ -21,10 +21,13 @@ setup(
     entry_points={
         "console_scripts": [
             "cmd_vel_to_tricycle = forklift_demo_control.cmd_vel_to_tricycle:main",
+            "keyboard_teleop = forklift_demo_control.keyboard_teleop:main",
             "hardcoded_route_sender = forklift_demo_control.hardcoded_route_sender:main",
             "map_service = forklift_demo_control.map_service:main",
             "route_service = forklift_demo_control.route_service:main",
+            "scan_sector_filter = forklift_demo_control.scan_sector_filter:main",
             "demo_route_loop = forklift_demo_control.demo_route_loop:main",
+            "rviz_teleop_marker = forklift_demo_control.rviz_teleop_marker:main",
         ]
     },
 )

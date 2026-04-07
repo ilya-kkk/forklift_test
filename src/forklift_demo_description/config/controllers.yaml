@@ -9,7 +9,7 @@ cmd_vel_to_tricycle:
     motion_mode: BODY_FIRST
     wheelbase: 1.2
     wheel_radius: 0.18
-    max_steering_angle: 1.48353
+    max_steering_angle: 1.57079632679
     max_steering_rate: 1.4
     max_wheel_angular_velocity: 5.0
     reverse_velocity_scale: 0.5
