@@ -26,7 +26,7 @@ class RvizTeleopMarker(Node):
     def __init__(self) -> None:
         super().__init__("rviz_teleop_marker")
 
-        self.declare_parameter("frame_id", "base_link")
+        self.declare_parameter("frame_id", "tracking_link")
         self.declare_parameter("server_name", "forklift_teleop")
         self.declare_parameter("marker_name", "drive_joystick")
         self.declare_parameter("cmd_vel_topic", "/cmd_vel")

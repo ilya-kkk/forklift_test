@@ -6,8 +6,10 @@ import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.time import Time
 from ros2_templates.srv import StringWithJson
 from std_msgs.msg import Float64
+from tf2_ros import Buffer, TransformException, TransformListener
 
 
 Point2D = Tuple[float, float]
@@ -20,8 +22,10 @@ class DemoRouteLoop(Node):
         self.declare_parameter("map_service_name", "/robot_data/map/get_map")
         self.declare_parameter("route_service_name", "/robot_data/route/go_to_point")
         self.declare_parameter("odom_topic", "/odom")
+        self.declare_parameter("global_frame_id", "map")
+        self.declare_parameter("base_frame_id", "tracking_link")
         self.declare_parameter("tick_period_sec", 0.2)
-        self.declare_parameter("goal_tolerance", 0.2)
+        self.declare_parameter("goal_tolerance", 0.05)
         self.declare_parameter("goal_hold_sec", 0.5)
         self.declare_parameter("retry_delay_sec", 1.0)
         self.declare_parameter("target_point_4_id", 4)
@@ -35,6 +39,8 @@ class DemoRouteLoop(Node):
         map_service_name = str(self.get_parameter("map_service_name").value)
         route_service_name = str(self.get_parameter("route_service_name").value)
         odom_topic = str(self.get_parameter("odom_topic").value)
+        self._global_frame_id = str(self.get_parameter("global_frame_id").value)
+        self._base_frame_id = str(self.get_parameter("base_frame_id").value)
         fork_lift_topic = str(self.get_parameter("fork_lift_topic").value)
         self._tick_period = float(self.get_parameter("tick_period_sec").value)
         self._goal_tolerance = float(self.get_parameter("goal_tolerance").value)
@@ -56,6 +62,8 @@ class DemoRouteLoop(Node):
         self._map_client = self.create_client(StringWithJson, map_service_name)
         self._route_client = self.create_client(StringWithJson, route_service_name)
         self._fork_lift_publisher = self.create_publisher(Float64, fork_lift_topic, 10)
+        self._tf_buffer = Buffer(cache_time=Duration(seconds=30.0))
+        self._tf_listener = TransformListener(self._tf_buffer, self)
         self.create_subscription(Odometry, odom_topic, self._odom_callback, 10)
         self.create_timer(self._tick_period, self._tick)
 
@@ -93,8 +101,10 @@ class DemoRouteLoop(Node):
         ]
 
         self.get_logger().info(
-            "demo_route_loop ready: bootstrap -> %d rear, cycle=(%d->%d rear, %d->%d rear, %d->%d rear)"
+            "demo_route_loop ready: frame=%s->%s bootstrap -> %d rear, cycle=(%d->%d rear, %d->%d rear, %d->%d rear)"
             % (
+                self._global_frame_id,
+                self._base_frame_id,
                 self._target_point_4_id,
                 self._target_point_4_id,
                 self._target_point_6_id,
@@ -107,6 +117,7 @@ class DemoRouteLoop(Node):
 
     def _tick(self) -> None:
         self._publish_fork_lift_target()
+        self._update_robot_position_from_tf()
 
         if self.get_clock().now() < self._next_action_time:
             return
@@ -354,6 +365,22 @@ class DemoRouteLoop(Node):
         self._latest_position = (
             float(message.pose.pose.position.x),
             float(message.pose.pose.position.y),
+        )
+
+    def _update_robot_position_from_tf(self) -> None:
+        try:
+            transform = self._tf_buffer.lookup_transform(
+                self._global_frame_id,
+                self._base_frame_id,
+                Time(),
+                timeout=Duration(seconds=0.0),
+            )
+        except TransformException:
+            return
+
+        self._latest_position = (
+            float(transform.transform.translation.x),
+            float(transform.transform.translation.y),
         )
 
     def _publish_fork_lift_target(self) -> None:

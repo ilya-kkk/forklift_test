@@ -33,7 +33,7 @@ class HardcodedRouteSender(Node):
         super().__init__("hardcoded_route_sender")
 
         self.declare_parameter("frame_id", "map")
-        self.declare_parameter("base_frame_id", "base_link")
+        self.declare_parameter("base_frame_id", "tracking_link")
         self.declare_parameter("tick_period_sec", 0.2)
         self.declare_parameter("dispatch_period_sec", 30.0)
         self.declare_parameter(
@@ -52,9 +52,9 @@ class HardcodedRouteSender(Node):
         self.declare_parameter("path_topic", "/demo_path")
         self.declare_parameter("motion_mode_topic", "/motion_mode")
         self.declare_parameter("odom_topic", "/odom")
-        self.declare_parameter("segment_completion_distance", 0.2)
+        self.declare_parameter("segment_completion_distance", 0.05)
         self.declare_parameter("controller_server_name", "controller_server")
-        self.declare_parameter("controller_reverse_param", "FollowPath.allow_reversing")
+        self.declare_parameter("controller_reverse_param", "")
         self.declare_parameter("mode_switch_settle_sec", 0.3)
         self.declare_parameter("debug_logging", True)
         self.declare_parameter("debug_log_period_sec", 1.0)
@@ -478,6 +478,13 @@ class HardcodedRouteSender(Node):
         self._next_dispatch_time = self.get_clock().now()
 
     def _ensure_controller_reverse_mode(self, allow_reversing: bool) -> None:
+        if not self._controller_reverse_param:
+            self._controller_allow_reversing = allow_reversing
+            self._next_dispatch_time = self.get_clock().now() + Duration(
+                seconds=self._mode_switch_settle_sec
+            )
+            return
+
         if not self._controller_param_client.wait_for_service(timeout_sec=0.0):
             if not self._waiting_for_param_service_logged:
                 self.get_logger().info(

@@ -13,9 +13,9 @@
   <depend>launch_ros</depend>
   <depend>nav2_controller</depend>
   <depend>nav2_costmap_2d</depend>
+  <depend>nav2_dwb_controller</depend>
   <depend>nav2_lifecycle_manager</depend>
   <depend>nav2_msgs</depend>
-  <depend>nav2_regulated_pure_pursuit_controller</depend>
   <depend>robot_state_publisher</depend>
   <depend>ros_gz_bridge</depend>
   <depend>ros_gz_sim</depend>
