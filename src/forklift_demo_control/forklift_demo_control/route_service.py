@@ -71,7 +71,7 @@ class RouteServiceNode(Node):
         self.declare_parameter("map_service_name", "/robot_data/map/get_map")
         self.declare_parameter("route_service_name", "/robot_data/route/go_to_point")
         self.declare_parameter("controller_server_name", "controller_server")
-        self.declare_parameter("controller_reverse_param", "FollowPath.allow_reversing")
+        self.declare_parameter("controller_reverse_param", "")
         self.declare_parameter("mode_switch_settle_sec", 0.3)
         self.declare_parameter("retry_delay_sec", 1.0)
         self.declare_parameter("debug_logging", True)
@@ -297,6 +297,11 @@ class RouteServiceNode(Node):
             return
 
         if not self._action_client.wait_for_server(timeout_sec=0.0):
+            return
+
+        if not self._controller_reverse_param:
+            self._controller_allow_reversing = segment.allow_reversing
+            self._dispatch_segment(segment)
             return
 
         desired_allow_reversing = segment.allow_reversing

@@ -191,7 +191,12 @@ def generate_launch_description() -> LaunchDescription:
             executable="demo_route_loop",
             name="demo_route_loop",
             output="screen",
-            parameters=[{"use_sim_time": use_sim_time}],
+            parameters=[
+                {
+                    "use_sim_time": use_sim_time,
+                    "base_frame_id": "tracking_link",
+                }
+            ],
             condition=IfCondition(run_demo_loop),
         ),
         Node(
@@ -199,7 +204,12 @@ def generate_launch_description() -> LaunchDescription:
             executable="rviz_teleop_marker",
             name="rviz_teleop_marker",
             output="screen",
-            parameters=[{"use_sim_time": use_sim_time}],
+            parameters=[
+                {
+                    "use_sim_time": use_sim_time,
+                    "frame_id": "tracking_link",
+                }
+            ],
             condition=IfCondition(launch_rviz),
         ),
         Node(
