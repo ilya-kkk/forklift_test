@@ -39,6 +39,20 @@
               <size>12 12 0.1</size>
             </box>
           </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>4.5</mu>
+                <mu2>4.5</mu2>
+                <slip1>0.005</slip1>
+                <slip2>0.005</slip2>
+              </ode>
+              <bullet>
+                <friction>4.5</friction>
+                <friction2>4.5</friction2>
+              </bullet>
+            </friction>
+          </surface>
         </collision>
         <visual name="floor_visual">
           <geometry>

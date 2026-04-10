@@ -9,10 +9,12 @@
   <xacro:arg name="wheel_width" default="0.08"/>
   <xacro:arg name="passive_wheel_radius" default="0.03"/>
   <xacro:arg name="passive_wheel_width" default="0.02"/>
-  <xacro:arg name="wheelbase" default="1.2"/>
+  <xacro:arg name="wheelbase" default="0.84"/>
   <xacro:arg name="max_steering_angle" default="1.57079632679"/>
   <xacro:arg name="laser_x" default="-0.38"/>
   <xacro:arg name="laser_z" default="0.55"/>
+  <xacro:arg name="fork_depth_camera_x" default="-0.24"/>
+  <xacro:arg name="fork_depth_camera_z" default="0.14"/>
 
   <material name="body_orange">
     <color rgba="0.90 0.62 0.18 1.0"/>
@@ -35,6 +37,14 @@
       <material name="body_orange"/>
     </visual>
   </link>
+
+  <link name="tracking_link"/>
+
+  <joint name="tracking_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="tracking_link"/>
+    <origin xyz="0.42 0 0" rpy="0 0 0"/>
+  </joint>
 
   <link name="fork_carriage_link">
     <visual>
@@ -102,7 +112,7 @@
     <child link="rear_steer_link"/>
     <origin xyz="-0.42 0.35 0.18" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
-    <limit effort="50" velocity="1.5" lower="-$(arg max_steering_angle)" upper="$(arg max_steering_angle)"/>
+    <limit effort="120" velocity="2.0" lower="-$(arg max_steering_angle)" upper="$(arg max_steering_angle)"/>
   </joint>
 
   <link name="rear_drive_wheel_link">
@@ -120,6 +130,7 @@
     <child link="rear_drive_wheel_link"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
+    <limit effort="800" velocity="12.0"/>
   </joint>
 
   <link name="rear_right_caster_link"/>
@@ -162,5 +173,21 @@
     <parent link="base_link"/>
     <child link="laser_link"/>
     <origin xyz="$(arg laser_x) 0 $(arg laser_z)" rpy="0 0 0"/>
+  </joint>
+
+  <link name="fork_depth_camera_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.08 0.04 0.04"/>
+      </geometry>
+      <material name="wheel_black"/>
+    </visual>
+  </link>
+
+  <joint name="fork_depth_camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="fork_depth_camera_link"/>
+    <origin xyz="$(arg fork_depth_camera_x) 0 $(arg fork_depth_camera_z)" rpy="0 0 0"/>
   </joint>
 </robot>

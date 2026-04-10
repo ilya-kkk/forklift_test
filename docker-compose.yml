@@ -39,3 +39,22 @@ services:
     command: >
       ros2 run rviz2 rviz2
       -d /ws/install/forklift_demo_description/share/forklift_demo_description/rviz/demo.rviz
+
+  rqt:
+    image: forklift_demo:humble
+    container_name: forklift_demo_rqt
+    depends_on:
+      - sim
+    network_mode: host
+    ipc: host
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+      QT_X11_NO_MITSHM: "1"
+      XAUTHORITY: /root/.Xauthority
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-/dev/null}:/root/.Xauthority:ro
+    command: >
+      ros2 run rqt_robot_steering rqt_robot_steering

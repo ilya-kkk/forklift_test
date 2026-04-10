@@ -4,6 +4,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -13,11 +14,14 @@ def generate_launch_description() -> LaunchDescription:
 
     use_sim_time = LaunchConfiguration("use_sim_time")
     launch_rviz = LaunchConfiguration("launch_rviz")
+    launch_rqt_teleop = LaunchConfiguration("launch_rqt_teleop")
     run_demo_loop = LaunchConfiguration("run_demo_loop")
     world = LaunchConfiguration("world")
     x = LaunchConfiguration("x")
     y = LaunchConfiguration("y")
     yaw = LaunchConfiguration("yaw")
+    rounded_corner_radius = LaunchConfiguration("rounded_corner_radius")
+    rear_entry_extension = LaunchConfiguration("rear_entry_extension")
 
     robot_xacro = PathJoinSubstitution(
         [pkg_share, "urdf", "forklift_demo.urdf.xacro"]
@@ -31,7 +35,6 @@ def generate_launch_description() -> LaunchDescription:
     bridge_config = PathJoinSubstitution([pkg_share, "config", "bridge_config.yaml"])
     nav2_params = PathJoinSubstitution([pkg_share, "config", "nav2_params.yaml"])
     slam_params = PathJoinSubstitution([pkg_share, "config", "slam_toolbox.yaml"])
-    control_params = PathJoinSubstitution([pkg_share, "config", "controllers.yaml"])
     rviz_config = PathJoinSubstitution([pkg_share, "rviz", "demo.rviz"])
 
     robot_description = Command(
@@ -133,10 +136,16 @@ def generate_launch_description() -> LaunchDescription:
         ),
         Node(
             package="forklift_demo_control",
-            executable="cmd_vel_to_tricycle",
-            name="cmd_vel_to_tricycle",
+            executable="cmd_vel_to_motors",
+            name="cmd_vel_to_motors",
             output="screen",
-            parameters=[control_params, {"use_sim_time": use_sim_time}],
+            parameters=[
+                {
+                    "use_sim_time": use_sim_time,
+                    "robot_description": robot_description,
+                    "cmd_vel_frame": "tracking_link",
+                }
+            ],
         ),
         Node(
             package="forklift_demo_control",
@@ -165,7 +174,17 @@ def generate_launch_description() -> LaunchDescription:
             executable="route_service",
             name="route_service",
             output="screen",
-            parameters=[{"use_sim_time": use_sim_time}],
+            parameters=[
+                {
+                    "use_sim_time": use_sim_time,
+                    "rounded_corner_radius": ParameterValue(
+                        rounded_corner_radius, value_type=float
+                    ),
+                    "rear_entry_extension": ParameterValue(
+                        rear_entry_extension, value_type=float
+                    ),
+                }
+            ],
         ),
         Node(
             package="forklift_demo_control",
@@ -191,12 +210,20 @@ def generate_launch_description() -> LaunchDescription:
             parameters=[{"use_sim_time": use_sim_time}],
             condition=IfCondition(launch_rviz),
         ),
+        Node(
+            package="rqt_robot_steering",
+            executable="rqt_robot_steering",
+            name="rqt_robot_steering",
+            output="screen",
+            condition=IfCondition(launch_rqt_teleop),
+        ),
     ]
 
     return LaunchDescription(
         [
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("launch_rviz", default_value="false"),
+            DeclareLaunchArgument("launch_rqt_teleop", default_value="false"),
             DeclareLaunchArgument("run_demo_loop", default_value="true"),
             DeclareLaunchArgument(
                 "world",
@@ -207,6 +234,8 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("x", default_value="3.0"),
             DeclareLaunchArgument("y", default_value="3.5"),
             DeclareLaunchArgument("yaw", default_value="0.0"),
+            DeclareLaunchArgument("rounded_corner_radius", default_value="0.0"),
+            DeclareLaunchArgument("rear_entry_extension", default_value="0.0"),
             gazebo,
             bridge,
             TimerAction(period=2.0, actions=[spawn_robot, spawn_pallet]),

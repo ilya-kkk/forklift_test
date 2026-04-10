@@ -64,6 +64,17 @@ Visualization Manager:
         Reliability Policy: Best Effort
         Value: /scan
       Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 4
+      Median window: 5
+      Min Value: 0
+      Name: ForkDepth
+      Normalize Range: false
+      Queue Size: 10
+      Topic: /fork_depth
+      Unreliable: false
+      Value: true
     - Alpha: 0.7
       Class: rviz_default_plugins/Map
       Color Scheme: map

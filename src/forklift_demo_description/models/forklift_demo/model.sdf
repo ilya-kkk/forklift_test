@@ -40,6 +40,26 @@
       </visual>
     </link>
 
+    <link name="tracking_link">
+      <pose>0.42 0 0.25 0 0 0</pose>
+      <inertial>
+        <mass>0.001</mass>
+        <inertia>
+          <ixx>1e-06</ixx>
+          <iyy>1e-06</iyy>
+          <izz>1e-06</izz>
+          <ixy>0.0</ixy>
+          <ixz>0.0</ixz>
+          <iyz>0.0</iyz>
+        </inertia>
+      </inertial>
+    </link>
+
+    <joint name="tracking_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>tracking_link</child>
+    </joint>
+
     <link name="fork_carriage_link">
       <pose>0 0 0.25 0 0 0</pose>
       <inertial>
@@ -116,6 +136,20 @@
             <length>0.02</length>
           </cylinder>
         </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>8.0</mu>
+              <mu2>8.0</mu2>
+              <slip1>0.0</slip1>
+              <slip2>0.0</slip2>
+            </ode>
+            <bullet>
+              <friction>8.0</friction>
+              <friction2>8.0</friction2>
+            </bullet>
+          </friction>
+        </surface>
       </collision>
       <visual name="front_left_wheel_visual">
         <pose>0 0 0 1.57079632679 0 0</pose>
@@ -153,6 +187,20 @@
             <length>0.02</length>
           </cylinder>
         </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>8.0</mu>
+              <mu2>8.0</mu2>
+              <slip1>0.0</slip1>
+              <slip2>0.0</slip2>
+            </ode>
+            <bullet>
+              <friction>8.0</friction>
+              <friction2>8.0</friction2>
+            </bullet>
+          </friction>
+        </surface>
       </collision>
       <visual name="front_right_wheel_visual">
         <pose>0 0 0 1.57079632679 0 0</pose>
@@ -233,8 +281,8 @@
         <limit>
           <lower>-1.57079632679</lower>
           <upper>1.57079632679</upper>
-          <effort>50</effort>
-          <velocity>1.5</velocity>
+          <effort>120</effort>
+          <velocity>2.0</velocity>
         </limit>
       </axis>
     </joint>
@@ -260,6 +308,20 @@
             <length>0.1</length>
           </cylinder>
         </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>5.5</mu>
+              <mu2>5.5</mu2>
+              <slip1>0.001</slip1>
+              <slip2>0.001</slip2>
+            </ode>
+            <bullet>
+              <friction>5.5</friction>
+              <friction2>5.5</friction2>
+            </bullet>
+          </friction>
+        </surface>
       </collision>
       <visual name="rear_drive_wheel_visual">
         <pose>0 0 0 1.57079632679 0 0</pose>
@@ -281,9 +343,13 @@
       <child>rear_drive_wheel_link</child>
       <axis>
         <xyz>0 1 0</xyz>
+        <dynamics>
+          <damping>3.0</damping>
+          <friction>35.0</friction>
+        </dynamics>
         <limit>
-          <effort>80</effort>
-          <velocity>6.0</velocity>
+          <effort>800</effort>
+          <velocity>12.0</velocity>
         </limit>
       </axis>
     </joint>
@@ -339,6 +405,20 @@
             <length>0.1</length>
           </cylinder>
         </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>2.5</mu>
+              <mu2>2.5</mu2>
+              <slip1>0.02</slip1>
+              <slip2>0.02</slip2>
+            </ode>
+            <bullet>
+              <friction>2.5</friction>
+              <friction2>2.5</friction2>
+            </bullet>
+          </friction>
+        </surface>
       </collision>
       <visual name="rear_right_wheel_visual">
         <pose>0 0 0 1.57079632679 0 0</pose>
@@ -424,11 +504,54 @@
       <child>laser_link</child>
     </joint>
 
-    <plugin
-      filename="gz-sim-velocity-control-system"
-      name="gz::sim::systems::VelocityControl">
-      <topic>/model/forklift_demo/cmd_vel</topic>
-    </plugin>
+    <link name="fork_depth_camera_link">
+      <pose>-0.24 0.0 0.14 0 0 0</pose>
+      <inertial>
+        <mass>0.15</mass>
+        <inertia>
+          <ixx>0.0002</ixx>
+          <iyy>0.0002</iyy>
+          <izz>0.0002</izz>
+          <ixy>0.0</ixy>
+          <ixz>0.0</ixz>
+          <iyz>0.0</iyz>
+        </inertia>
+      </inertial>
+      <visual name="fork_depth_camera_visual">
+        <geometry>
+          <box>
+            <size>0.08 0.04 0.04</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.12 0.12 0.14 1.0</ambient>
+          <diffuse>0.12 0.12 0.14 1.0</diffuse>
+        </material>
+      </visual>
+      <sensor name="fork_depth_camera_sensor" type="depth_camera">
+        <topic>/fork_depth</topic>
+        <update_rate>12</update_rate>
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <camera>
+          <horizontal_fov>1.047</horizontal_fov>
+          <image>
+            <width>320</width>
+            <height>240</height>
+            <format>R_FLOAT32</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>4.0</far>
+          </clip>
+        </camera>
+      </sensor>
+    </link>
+
+    <joint name="fork_depth_camera_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>fork_depth_camera_link</child>
+    </joint>
 
     <plugin
       filename="gz-sim-odometry-publisher-system"
@@ -458,8 +581,14 @@
       filename="gz-sim-joint-position-controller-system"
       name="gz::sim::systems::JointPositionController">
       <joint_name>rear_steering_joint</joint_name>
-      <use_velocity_commands>true</use_velocity_commands>
       <topic>/forklift/rear_steering_cmd</topic>
+      <p_gain>80</p_gain>
+      <i_gain>0.5</i_gain>
+      <d_gain>12</d_gain>
+      <i_max>5</i_max>
+      <i_min>-5</i_min>
+      <cmd_max>120</cmd_max>
+      <cmd_min>-120</cmd_min>
     </plugin>
 
     <plugin

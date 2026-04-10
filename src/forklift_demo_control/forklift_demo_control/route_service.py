@@ -61,9 +61,9 @@ class RouteServiceNode(Node):
 
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("path_resolution", 0.08)
-        self.declare_parameter("rounded_corner_radius", 1.0)
+        self.declare_parameter("rounded_corner_radius", 0.0)
         self.declare_parameter("right_angle_tolerance_deg", 15.0)
-        self.declare_parameter("rear_entry_extension", 1.0)
+        self.declare_parameter("rear_entry_extension", 0.0)
         self.declare_parameter("controller_id", "FollowPath")
         self.declare_parameter("goal_checker_id", "goal_checker")
         self.declare_parameter("path_topic", "/demo_path")

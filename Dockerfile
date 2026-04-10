@@ -12,6 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-rmw-cyclonedds-cpp \
     ros-humble-robot-state-publisher \
     ros-humble-ros-gz \
+    ros-humble-rqt \
+    ros-humble-rqt-robot-steering \
     ros-humble-rviz2 \
     ros-humble-slam-toolbox \
     ros-humble-tf2-ros \

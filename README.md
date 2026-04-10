@@ -14,14 +14,14 @@
 - `route_service`
   Принимает запрос "откуда -> куда -> как приехать", сам запрашивает карту, строит маршрут по графу и отправляет `FollowPath` в Nav2.
 
-- `cmd_vel_to_tricycle`
-  Берет `cmd_vel` от Nav2 и переводит его в команды именно для нашей rear-steer кинематики: угол заднего рулевого колеса, скорость ведущего колеса и `Twist` в Gazebo.
+- `cmd_vel_to_motors`
+  Низкоуровневый контроллер. Принимает `/cmd_vel` и `/motion_mode`, анализирует кинематику по URDF и публикует угол поворотного ведущего колеса и его угловую скорость в топики контроллеров Gazebo.
 
 - `demo_route_loop`
-  Опциональный демонстрационный узел. Если включен, сам по кругу вызывает сервис маршрута и имитирует перевозку палеты между несколькими точками.
+  Демонстрационный узел. По умолчанию включен в launch, сам по кругу вызывает сервис маршрута и имитирует перевозку палеты между несколькими точками.
 
 - `controller_server` из Nav2
-  Исполняет уже готовый путь через `RegulatedPurePursuitController`.
+  Исполняет уже готовый путь через `RegulatedPurePursuitController` и публикует `/cmd_vel`.
 
 - `slam_toolbox`
   Публикует `map -> odom`.
@@ -108,23 +108,83 @@
 
 Итог: пользователь всегда вызывает один сервис, а внутри маршрут может превратиться в 1 или 2 `FollowPath`-сегмента в зависимости от того, как нужно приехать в цель.
 
-## Как работает низкий уровень
+## Как исполняется `/cmd_vel`
 
-[cmd_vel_to_tricycle.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/cmd_vel_to_tricycle.py) делает следующее:
+Низкий уровень сейчас устроен так:
 
-- подписывается на `cmd_vel`
-- подписывается на `/motion_mode`
-- приводит линейную скорость к нужному направлению движения
-- для reverse-режима дополнительно ограничивает скорость коэффициентом `reverse_velocity_scale`
-- пересчитывает `omega`, чтобы при смене знака скорости не ломалась кривизна пути
-- считает угол заднего рулевого колеса по модели rear steering
-- ограничивает скорость изменения руля
-- публикует:
-  - угол заднего рулевого колеса
-  - скорость ведущего колеса
-  - `Twist` в Gazebo
+- Источники `cmd_vel`
+  `controller_server`, `rqt_robot_steering`, [keyboard_teleop.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/keyboard_teleop.py) и [rviz_teleop_marker.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/rviz_teleop_marker.py) могут публиковать `/cmd_vel`.
 
-То есть Nav2 по-прежнему работает как источник `cmd_vel`, а вся специфичная кинематика погрузчика живет в одном отдельном узле.
+- Источник `motion_mode`
+  [route_service.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/route_service.py), [keyboard_teleop.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/keyboard_teleop.py) и [rviz_teleop_marker.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/rviz_teleop_marker.py) публикуют `/motion_mode`.
+
+- Низкоуровневое преобразование
+  [cmd_vel_to_motors.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/cmd_vel_to_motors.py) читает `robot_description` из URDF, извлекает положение `rear_steering_joint`, радиус `rear_wheel_joint` и позу `tracking_link`.
+
+- Опорная точка команды
+  `/cmd_vel` интерпретируется относительно `tracking_link`, который уже используется Nav2 как `robot_base_frame`. Это важно, потому что ведущее колесо смещено в сторону и назад; без общей опорной точки левый и правый поворот дают разную мгновенную ось вращения.
+
+- Режимы движения
+  `BODY_FIRST` заставляет низкий уровень ехать в сторону корпуса. `FORKS_FIRST` заставляет ехать в сторону вил и дополнительно ограничивает скорость через `reverse_velocity_scale`, сохраняя кривизну команды.
+
+- Выход низкого уровня
+  `cmd_vel_to_motors` публикует:
+  - `/forklift/rear_steering_cmd`
+  - `/forklift/rear_wheel_cmd`
+
+  Дальше эти топики через `ros_gz_bridge` попадают в Gazebo-контроллеры шарниров.
+
+## Прямое управление рулем и скоростью
+
+Если хочешь обойти `cmd_vel_to_motors` и управлять погрузчиком напрямую, можно публиковать команды сразу в два топика:
+
+- `/forklift/rear_steering_cmd`
+  Угол поворотного ведущего колеса в радианах.
+
+- `/forklift/rear_wheel_cmd`
+  Угловая скорость ведущего колеса в рад/с.
+
+Примеры:
+
+Повернуть колесо на `90°` вправо:
+
+```bash
+ros2 topic pub /forklift/rear_steering_cmd std_msgs/msg/Float64 "{data: 1.5708}" -r 10
+```
+
+Повернуть колесо на `90°` влево:
+
+```bash
+ros2 topic pub /forklift/rear_steering_cmd std_msgs/msg/Float64 "{data: -1.5708}" -r 10
+```
+
+Поставить колесо прямо:
+
+```bash
+ros2 topic pub /forklift/rear_steering_cmd std_msgs/msg/Float64 "{data: 0.0}" -r 10
+```
+
+Задать скорость ведущего колеса:
+
+```bash
+ros2 topic pub /forklift/rear_wheel_cmd std_msgs/msg/Float64 "{data: 2.0}" -r 10
+```
+
+Остановить ведущее колесо:
+
+```bash
+ros2 topic pub --once /forklift/rear_wheel_cmd std_msgs/msg/Float64 "{data: 0.0}"
+```
+
+Приблизительное соответствие угловой и линейной скорости при радиусе колеса `0.18 м`:
+
+- `1.0 рад/с` ≈ `0.18 м/с`
+- `2.0 рад/с` ≈ `0.36 м/с`
+- `3.0 рад/с` ≈ `0.54 м/с`
+
+Важно:
+
+- текущий лимит угла руля `±90°`
 
 ## Текущая карта
 
@@ -199,6 +259,12 @@ docker compose up --build sim
 docker compose up --build rviz
 ```
 
+Только `rqt` с джойстиком для публикации в `/cmd_vel`:
+
+```bash
+docker compose up --build rqt
+```
+
 Главный launch: [sim_followpath.launch.py](/home/user/forklift_test/src/forklift_demo_description/launch/sim_followpath.launch.py)
 
 Он поднимает:
@@ -209,11 +275,12 @@ docker compose up --build rviz
 - `slam_toolbox`
 - `controller_server`
 - `lifecycle_manager`
-- `cmd_vel_to_tricycle`
+- `cmd_vel_to_motors`
 - `map_service`
 - `route_service`
-- `demo_route_loop` при `run_demo_loop:=true`
+- `demo_route_loop` при `run_demo_loop:=true` (по умолчанию включен)
 - RViz при `launch_rviz:=true`
+- `rqt_robot_steering` при `launch_rqt_teleop:=true`
 
 ## Сборка внутри контейнера
 
@@ -274,17 +341,14 @@ ros2 service call /robot_data/route/go_to_point ros2_templates/srv/StringWithJso
 - [route_service.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/route_service.py)
   Строит путь по карте и исполняет его через Nav2.
 
-- [cmd_vel_to_tricycle.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/cmd_vel_to_tricycle.py)
-  Преобразует `cmd_vel` в команды rear-steer базы.
+- [cmd_vel_to_motors.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/cmd_vel_to_motors.py)
+  Преобразует `/cmd_vel` и `/motion_mode` в команды угла руля и скорости ведущего колеса по кинематике из URDF.
 
 - [demo_route_loop.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/demo_route_loop.py)
   Автоматический демонстрационный цикл.
 
 - [map_data.py](/home/user/forklift_test/src/forklift_demo_control/forklift_demo_control/map_data.py)
   Описание точек и ребер графа.
-
-- [controllers.yaml](/home/user/forklift_test/src/forklift_demo_description/config/controllers.yaml)
-  Параметры low-level узла `cmd_vel_to_tricycle`.
 
 - [nav2_params.yaml](/home/user/forklift_test/src/forklift_demo_description/config/nav2_params.yaml)
   Параметры `RegulatedPurePursuitController` и local costmap.
@@ -295,5 +359,85 @@ ros2 service call /robot_data/route/go_to_point ros2_templates/srv/StringWithJso
 - [model.sdf](/home/user/forklift_test/src/forklift_demo_description/models/forklift_demo/model.sdf)
   Gazebo-модель робота.
 
+- [sim_followpath.launch.py](/home/user/forklift_test/src/forklift_demo_description/launch/sim_followpath.launch.py)
+  Главный launch, который собирает навигацию, low-level контроллер, bridge и демонстрационный цикл.
+
 - [StringWithJson.srv](/home/user/forklift_test/src/ros2_templates/srv/StringWithJson.srv)
   Общий сервисный интерфейс JSON-запросов и JSON-ответов.
+
+
+### 1. Сервисы и связи между узлами
+
+```mermaid
+flowchart LR
+    subgraph Clients[Клиенты]
+        U[Пользователь / внешний клиент]
+        D[demo_route_loop]
+        RV[RViz + rviz_teleop_marker]
+        RQT[rqt_robot_steering]
+    end
+
+    subgraph ServiceLayer[Сервисный слой]
+        MS[map_service<br/>/robot_data/map/get_map]
+        RS[route_service<br/>/robot_data/route/go_to_point]
+    end
+
+    subgraph Navigation[Навигация]
+        CS[controller_server]
+        LM[lifecycle_manager_navigation]
+    end
+
+    subgraph LowLevel[Низкий уровень]
+        URDF[URDF/xacro<br/>robot_description]
+        C2M[cmd_vel_to_motors]
+    end
+
+    subgraph Localization[Локализация и сенсоры]
+        SF[scan_sector_filter]
+        ST[slam_toolbox]
+        RSP[robot_state_publisher]
+    end
+
+    subgraph Simulation[Симуляция]
+        BR[ros_gz_bridge]
+        GZ[Gazebo Sim]
+    end
+
+    U -->|service /robot_data/map/get_map| MS
+    U -->|service /robot_data/route/go_to_point| RS
+    D -->|service /robot_data/map/get_map| MS
+    D -->|service /robot_data/route/go_to_point| RS
+
+    RS -->|service call get_map| MS
+    RS -->|action /follow_path| CS
+    RS -->|set_parameters<br/>FollowPath.allow_reversing| CS
+    RS -->|/motion_mode| C2M
+    RS -->|topic /demo_path| RV
+
+    CS -->|/cmd_vel| C2M
+    LM -->|управляет lifecycle| CS
+
+    D -->|/forklift/fork_lift_cmd| BR
+    RV -->|/cmd_vel и /motion_mode| C2M
+    RQT -->|/cmd_vel| C2M
+
+    URDF -->|robot_description| RSP
+    URDF -->|robot_description| C2M
+
+    C2M -->|/forklift/rear_steering_cmd| BR
+    C2M -->|/forklift/rear_wheel_cmd| BR
+
+    BR -->|команды| GZ
+    GZ -->|/odom_gz / scan / tf_gz / joint_states_gz| BR
+
+    BR -->|/scan_raw| SF
+    SF -->|/scan| ST
+    BR -->|/odom| ST
+    BR -->|/odom| D
+    ST -->|map и map->odom| CS
+    ST -->|map / tf| RV
+
+    BR -->|/joint_states| RSP
+    RSP -->|robot TF| RV
+    BR -->|/odom / tf / joint_states| RV
+```
