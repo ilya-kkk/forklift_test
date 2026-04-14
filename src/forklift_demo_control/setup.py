@@ -22,6 +22,7 @@ setup(
         "console_scripts": [
             "keyboard_teleop = forklift_demo_control.keyboard_teleop:main",
             "cmd_vel_to_motors = forklift_demo_control.cmd_vel_to_motors:main",
+            "depth_image_to_pointcloud = forklift_demo_control.depth_image_to_pointcloud:main",
             "hardcoded_route_sender = forklift_demo_control.hardcoded_route_sender:main",
             "map_service = forklift_demo_control.map_service:main",
             "route_service = forklift_demo_control.route_service:main",

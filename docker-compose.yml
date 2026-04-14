@@ -8,14 +8,8 @@ services:
     network_mode: host
     ipc: host
     environment:
-      DISPLAY: ${DISPLAY:-:0}
-      QT_X11_NO_MITSHM: "1"
-      XAUTHORITY: /root/.Xauthority
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
-    volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${XAUTHORITY:-/dev/null}:/root/.Xauthority:ro
     command: >
       ros2 launch forklift_demo_description sim_followpath.launch.py
       launch_rviz:=false
@@ -43,6 +37,8 @@ services:
   rqt:
     image: forklift_demo:humble
     container_name: forklift_demo_rqt
+    profiles:
+      - teleop
     depends_on:
       - sim
     network_mode: host
