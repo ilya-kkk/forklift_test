@@ -14,7 +14,6 @@ def generate_launch_description() -> LaunchDescription:
 
     use_sim_time = LaunchConfiguration("use_sim_time")
     launch_rviz = LaunchConfiguration("launch_rviz")
-    launch_rqt_teleop = LaunchConfiguration("launch_rqt_teleop")
     run_demo_loop = LaunchConfiguration("run_demo_loop")
     world = LaunchConfiguration("world")
     x = LaunchConfiguration("x")
@@ -45,7 +44,7 @@ def generate_launch_description() -> LaunchDescription:
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([ros_gz_sim_share, "launch", "gz_sim.launch.py"])
         ),
-        launch_arguments={"gz_args": ["-r -v 2 ", world]}.items(),
+        launch_arguments={"gz_args": ["-r -s --headless-rendering -v 2 ", world]}.items(),
     )
 
     spawn_robot = Node(
@@ -164,6 +163,24 @@ def generate_launch_description() -> LaunchDescription:
         ),
         Node(
             package="forklift_demo_control",
+            executable="depth_image_to_pointcloud",
+            name="depth_image_to_pointcloud",
+            output="screen",
+            parameters=[
+                {
+                    "use_sim_time": use_sim_time,
+                    "input_depth_topic": "/fork_depth",
+                    "input_camera_info_topic": "/fork_depth/camera_info",
+                    "output_pointcloud_topic": "/fork_depth/points",
+                    "output_frame_id": "fork_depth_camera_link",
+                    "rotate_x_deg": -90.0,
+                    "rotate_y_deg": 0.0,
+                    "rotate_z_deg": -90.0,
+                }
+            ],
+        ),
+        Node(
+            package="forklift_demo_control",
             executable="map_service",
             name="map_service",
             output="screen",
@@ -220,20 +237,12 @@ def generate_launch_description() -> LaunchDescription:
             parameters=[{"use_sim_time": use_sim_time}],
             condition=IfCondition(launch_rviz),
         ),
-        Node(
-            package="rqt_robot_steering",
-            executable="rqt_robot_steering",
-            name="rqt_robot_steering",
-            output="screen",
-            condition=IfCondition(launch_rqt_teleop),
-        ),
     ]
 
     return LaunchDescription(
         [
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("launch_rviz", default_value="false"),
-            DeclareLaunchArgument("launch_rqt_teleop", default_value="false"),
             DeclareLaunchArgument("run_demo_loop", default_value="true"),
             DeclareLaunchArgument(
                 "world",

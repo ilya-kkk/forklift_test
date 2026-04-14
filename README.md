@@ -247,6 +247,8 @@ ros2 launch forklift_demo_description sim_followpath.launch.py run_demo_loop:=fa
 docker compose up --build
 ```
 
+По умолчанию это поднимает headless Gazebo и не запускает `rqt`.
+
 Только симуляция:
 
 ```bash
@@ -262,14 +264,14 @@ docker compose up --build rviz
 Только `rqt` с джойстиком для публикации в `/cmd_vel`:
 
 ```bash
-docker compose up --build rqt
+docker compose --profile teleop up --build rqt
 ```
 
 Главный launch: [sim_followpath.launch.py](/home/user/forklift_test/src/forklift_demo_description/launch/sim_followpath.launch.py)
 
 Он поднимает:
 
-- Gazebo
+- Gazebo headless
 - bridge
 - `robot_state_publisher`
 - `slam_toolbox`
@@ -280,7 +282,6 @@ docker compose up --build rqt
 - `route_service`
 - `demo_route_loop` при `run_demo_loop:=true` (по умолчанию включен)
 - RViz при `launch_rviz:=true`
-- `rqt_robot_steering` при `launch_rqt_teleop:=true`
 
 ## Сборка внутри контейнера
 
