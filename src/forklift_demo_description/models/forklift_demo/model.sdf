@@ -504,55 +504,6 @@
       <child>laser_link</child>
     </joint>
 
-    <link name="fork_depth_camera_link">
-      <pose>-0.24 0.0 0.14 0 0 0</pose>
-      <inertial>
-        <mass>0.15</mass>
-        <inertia>
-          <ixx>0.0002</ixx>
-          <iyy>0.0002</iyy>
-          <izz>0.0002</izz>
-          <ixy>0.0</ixy>
-          <ixz>0.0</ixz>
-          <iyz>0.0</iyz>
-        </inertia>
-      </inertial>
-      <visual name="fork_depth_camera_visual">
-        <geometry>
-          <box>
-            <size>0.08 0.04 0.04</size>
-          </box>
-        </geometry>
-        <material>
-          <ambient>0.12 0.12 0.14 1.0</ambient>
-          <diffuse>0.12 0.12 0.14 1.0</diffuse>
-        </material>
-      </visual>
-      <sensor name="fork_depth_camera_sensor" type="depth_camera">
-        <topic>/fork_depth</topic>
-        <update_rate>12</update_rate>
-        <always_on>true</always_on>
-        <visualize>false</visualize>
-        <camera>
-          <horizontal_fov>1.047</horizontal_fov>
-          <image>
-            <width>320</width>
-            <height>240</height>
-            <format>R_FLOAT32</format>
-          </image>
-          <clip>
-            <near>0.05</near>
-            <far>4.0</far>
-          </clip>
-        </camera>
-      </sensor>
-    </link>
-
-    <joint name="fork_depth_camera_joint" type="fixed">
-      <parent>base_link</parent>
-      <child>fork_depth_camera_link</child>
-    </joint>
-
     <plugin
       filename="gz-sim-odometry-publisher-system"
       name="ignition::gazebo::systems::OdometryPublisher">
@@ -589,20 +540,6 @@
       <i_min>-5</i_min>
       <cmd_max>120</cmd_max>
       <cmd_min>-120</cmd_min>
-    </plugin>
-
-    <plugin
-      filename="gz-sim-joint-position-controller-system"
-      name="gz::sim::systems::JointPositionController">
-      <joint_name>fork_lift_joint</joint_name>
-      <topic>/forklift/fork_lift_cmd</topic>
-      <p_gain>20000</p_gain>
-      <i_gain>200</i_gain>
-      <d_gain>500</d_gain>
-      <i_max>200</i_max>
-      <i_min>-200</i_min>
-      <cmd_max>5000</cmd_max>
-      <cmd_min>-5000</cmd_min>
     </plugin>
 
     <plugin

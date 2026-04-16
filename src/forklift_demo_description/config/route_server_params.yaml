@@ -1,0 +1,20 @@
+route_server:
+  ros__parameters:
+    use_sim_time: true
+    route_frame: map
+    global_frame: map
+    base_frame: tracking_link
+    graph_filepath: /tmp/forklift_demo_route_graph.geojson
+    graph_file_loader: "GeoJsonGraphFileLoader"
+    path_density: 0.05
+    smooth_corners: false
+    smoothing_radius: 0.0
+    boundary_radius_to_achieve_node: 0.05
+    radius_to_achieve_node: 0.25
+    edge_cost_functions: ["DistanceScorer"]
+
+    GeoJsonGraphFileLoader:
+      plugin: "nav2_route::GeoJsonGraphFileLoader"
+
+    DistanceScorer:
+      plugin: "nav2_route::DistanceScorer"

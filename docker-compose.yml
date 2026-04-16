@@ -10,13 +10,21 @@ services:
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+    volumes:
+      - .:/ws
+      - colcon_build:/ws/build
+      - colcon_install:/ws/install
+      - colcon_log:/ws/log
     command: >
-      ros2 launch forklift_demo_description sim_followpath.launch.py
-      launch_rviz:=false
+      bash -lc "
+      colcon build --symlink-install --packages-up-to forklift_demo_description &&
+      source /ws/install/setup.bash &&
+      ros2 launch forklift_demo_description sim_followpath.launch.py launch_rviz:=false"
 
   rviz:
     image: forklift_demo:humble
     container_name: forklift_demo_rviz
+    user: "1000:1000"
     depends_on:
       - sim
     network_mode: host
@@ -24,33 +32,28 @@ services:
     environment:
       DISPLAY: ${DISPLAY:-:0}
       QT_X11_NO_MITSHM: "1"
-      XAUTHORITY: /root/.Xauthority
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      HOME: /tmp/rviz-home
+      ROS_LOG_DIR: /tmp/rviz-home/.ros/log
+      XDG_RUNTIME_DIR: /tmp/runtime-user
+      XAUTHORITY: /tmp/.Xauthority
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
     volumes:
+      - .:/ws
+      - colcon_install:/ws/install:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${XAUTHORITY:-/dev/null}:/root/.Xauthority:ro
+      - ${XAUTHORITY:-/dev/null}:/tmp/.Xauthority:ro
     command: >
-      ros2 run rviz2 rviz2
-      -d /ws/install/forklift_demo_description/share/forklift_demo_description/rviz/demo.rviz
+      bash -lc "
+      mkdir -p /tmp/rviz-home/.ros/log &&
+      mkdir -p /tmp/runtime-user &&
+      chmod 700 /tmp/runtime-user &&
+      until [ -f /ws/install/setup.bash ]; do sleep 1; done &&
+      source /ws/install/setup.bash &&
+      ros2 run rviz2 rviz2 -d /ws/src/forklift_demo_description/rviz/demo.rviz"
 
-  rqt:
-    image: forklift_demo:humble
-    container_name: forklift_demo_rqt
-    profiles:
-      - teleop
-    depends_on:
-      - sim
-    network_mode: host
-    ipc: host
-    environment:
-      DISPLAY: ${DISPLAY:-:0}
-      QT_X11_NO_MITSHM: "1"
-      XAUTHORITY: /root/.Xauthority
-      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
-      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
-    volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${XAUTHORITY:-/dev/null}:/root/.Xauthority:ro
-    command: >
-      ros2 run rqt_robot_steering rqt_robot_steering
+volumes:
+  colcon_build:
+  colcon_install:
+  colcon_log:
