@@ -7,6 +7,8 @@ Panels:
     Name: Tool Properties
   - Class: rviz_common/Views
     Name: Views
+  - Class: nav2_rviz_plugins/Navigation 2
+    Name: Navigation 2
 Visualization Manager:
   Class: ""
   Displays:
@@ -42,14 +44,6 @@ Visualization Manager:
       Show Axes: true
       Show Names: true
       Value: true
-    - Class: rviz_default_plugins/InteractiveMarkers
-      Enabled: true
-      Name: TeleopJoystick
-      Show Axes: false
-      Show Descriptions: true
-      Show Visual Aids: true
-      Update Topic: /forklift_teleop/update
-      Value: true
     - Class: rviz_default_plugins/LaserScan
       Color: 255; 85; 0
       Enabled: true
@@ -64,63 +58,28 @@ Visualization Manager:
         Reliability Policy: Best Effort
         Value: /scan
       Value: true
-    - Class: rviz_default_plugins/Image
+    - Alpha: 0.8
+      Binary representation: false
+      Binary threshold: 100
+      Class: rviz_default_plugins/Map
+      Color Scheme: map
+      Draw Behind: true
       Enabled: true
-      Max Value: 4
-      Median window: 5
-      Min Value: 0
-      Name: ForkDepth
-      Normalize Range: false
-      Queue Size: 10
-      Topic: /fork_depth
-      Unreliable: false
-      Value: true
-    - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
-        Value: true
-      Axis: Z
-      Channel Name: z
-      Class: rviz_default_plugins/PointCloud2
-      Color: 255; 255; 255
-      Color Transformer: Intensity
-      Decay Time: 0
-      Enabled: true
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Max Intensity: 4096
-      Min Color: 0; 0; 0
-      Min Intensity: 0
-      Name: ForkDepthPoints
-      Position Transformer: XYZ
-      Queue Size: 30
-      Selectable: true
-      Size (Pixels): 3
-      Size (m): 0.02
-      Style: Flat Squares
+      Name: Map
       Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /map
+      Update Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /fork_depth/points
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: true
-    - Alpha: 0.7
-      Class: rviz_default_plugins/Map
-      Color Scheme: map
-      Enabled: true
-      Filter size: 20
-      Name: Map
-      Topic:
-        Depth: 5
-        Durability Policy: Transient Local
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /map
+        Value: /map_updates
+      Use Timestamp: false
       Value: true
     - Alpha: 1
       Buffer Length: 2
@@ -133,7 +92,7 @@ Visualization Manager:
       Length: 0.2
       Line Style: Billboards
       Line Width: 0.2
-      Name: DemoPath
+      Name: RoutePath
       Pose Color: 255; 255; 255
       Pose Style: None
       Radius: 0.05
@@ -144,46 +103,81 @@ Visualization Manager:
         Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /demo_path
+        Value: /route_path
       Value: true
     - Alpha: 1
-      Buffer Length: 1
+      Buffer Length: 2
       Class: rviz_default_plugins/Path
-      Color: 255; 120; 40
-      Enabled: true
-      Filter size: 100
-      Head Diameter: 0.1
-      Head Length: 0.08
-      Length: 0.1
-      Line Style: Billboards
-      Line Width: 0.12
-      Name: LookaheadArc
-      Pose Color: 255; 255; 255
-      Pose Style: None
-      Radius: 0.04
-      Shaft Diameter: 0.02
-      Shaft Length: 0.08
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /lookahead_arc
-      Value: true
-    - Alpha: 1
-      Class: rviz_default_plugins/PointStamped
-      Color: 255; 225; 40
+      Color: 220; 30; 30
       Enabled: true
       Filter size: 30
-      History Length: 1
-      Name: LookaheadPoint
-      Radius: 0.09
+      Head Diameter: 0.18
+      Head Length: 0.14
+      Length: 0.25
+      Line Style: Billboards
+      Line Width: 0.035
+      Name: PlannedPath
+      Pose Color: 255; 255; 255
+      Pose Style: None
+      Radius: 0.06
+      Shaft Diameter: 0.04
+      Shaft Length: 0.12
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /lookahead_point
+        Value: /plan
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: RouteGraph
+      Namespaces:
+        route_graph: true
+        route_graph_ids: true
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /route_graph
+      Value: true
+    - Alpha: 0.9
+      Class: rviz_default_plugins/Polygon
+      Color: 255; 40; 40
+      Enabled: true
+      Name: CollisionStop
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /collision_monitor/polygon_stop
+      Value: true
+    - Alpha: 0.7
+      Class: rviz_default_plugins/Polygon
+      Color: 255; 180; 0
+      Enabled: true
+      Name: CollisionSlowdown
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /collision_monitor/polygon_slowdown
+      Value: true
+    - Alpha: 1
+      Buffer Length: 2
+      Class: rviz_default_plugins/Path
+      Color: 255; 215; 0
+      Enabled: true
+      Name: LookaheadCollisionArc
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /lookahead_collision_arc
       Value: true
     - Angle Tolerance: 0.1
       Class: rviz_default_plugins/Odometry
@@ -222,6 +216,7 @@ Visualization Manager:
     - Class: rviz_default_plugins/Select
     - Class: rviz_default_plugins/FocusCamera
     - Class: rviz_default_plugins/Measure
+    - Class: nav2_rviz_plugins/GoalTool
   Value: true
   Views:
     Current:
@@ -236,4 +231,6 @@ Visualization Manager:
       Yaw: 0.6
 Window Geometry:
   Height: 1000
+  Navigation 2:
+    collapsed: false
   Width: 1600
