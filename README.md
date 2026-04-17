@@ -57,7 +57,6 @@
 - ручное shortest-path планирование поверх JSON-карты
 - corner smoothing / densify логика для runtime route planning
 - runtime-переключение `FollowPath.allow_reversing`
-- `rqt_robot_steering` и отдельный `rqt`-контейнер
 
 ## JSON карта
 
@@ -133,7 +132,7 @@ ros2 service call /robot_data/route/go_to_point ros2_templates/srv/StringWithJso
 - `use_velocity_scaled_lookahead_dist: false`
 - `use_regulated_linear_velocity_scaling: false`
 - `use_cost_regulated_linear_velocity_scaling: false`
-- `use_rotate_to_heading: false`
+- `use_rotate_to_heading: true`
 - `allow_reversing: false`
 
 Файл:
@@ -158,7 +157,7 @@ Collision Monitor стоит между выходом Nav2 и низким ур
 - `PolygonStop` перед роботом
 - `PolygonSlow` шире и дальше перед роботом
 - источник наблюдений: `/scan`
-- базовая frame: `tracking_link`
+- базовая frame: `base_link`
 
 ## Launch
 
@@ -197,6 +196,12 @@ docker compose up sim
 
 ```bash
 docker compose up rviz
+```
+
+Отдельно RQT steering для `/cmd_vel`:
+
+```bash
+docker compose up rqt
 ```
 
 Важно:

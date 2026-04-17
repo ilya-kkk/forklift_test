@@ -21,6 +21,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
             python3-setuptools \
             ros-humble-navigation2 \
             ros-humble-rmw-cyclonedds-cpp \
+            ros-humble-rqt-robot-steering \
             ros-humble-robot-state-publisher \
             ros-humble-ros-gz \
             ros-humble-rviz2 \
