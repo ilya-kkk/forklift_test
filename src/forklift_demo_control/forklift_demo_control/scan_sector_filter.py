@@ -2,7 +2,13 @@ import math
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from sensor_msgs.msg import LaserScan
 
 
@@ -33,8 +39,15 @@ class ScanSectorFilter(Node):
             0.0, math.radians(blind_sector_half_width_deg)
         )
 
+        output_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+
         self._publisher = self.create_publisher(
-            LaserScan, output_scan_topic, qos_profile_sensor_data
+            LaserScan, output_scan_topic, output_qos
         )
         self.create_subscription(
             LaserScan,

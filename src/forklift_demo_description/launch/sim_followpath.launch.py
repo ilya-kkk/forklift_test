@@ -1,16 +1,21 @@
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    EmitEvent,
     IncludeLaunchDescription,
     RegisterEventHandler,
     TimerAction,
 )
 from launch.conditions import IfCondition
+from launch.events import matches_action
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
-from launch_ros.actions import Node
+from launch_ros.actions import LifecycleNode, Node
+from launch_ros.event_handlers import OnStateTransition
+from launch_ros.events.lifecycle import ChangeState
 from launch_ros.substitutions import FindPackageShare
+from lifecycle_msgs.msg import Transition
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -148,6 +153,21 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[collision_monitor_params, {"use_sim_time": use_sim_time}],
     )
 
+    slam_toolbox = LifecycleNode(
+        package="slam_toolbox",
+        executable="async_slam_toolbox_node",
+        name="slam_toolbox",
+        namespace="",
+        output="screen",
+        parameters=[
+            slam_params,
+            {
+                "use_sim_time": use_sim_time,
+                "use_lifecycle_manager": False,
+            },
+        ],
+    )
+
     planner_server = Node(
         package="nav2_planner",
         executable="planner_server",
@@ -219,13 +239,7 @@ def generate_launch_description() -> LaunchDescription:
                 }
             ],
         ),
-        Node(
-            package="slam_toolbox",
-            executable="async_slam_toolbox_node",
-            name="slam_toolbox",
-            output="screen",
-            parameters=[slam_params, {"use_sim_time": use_sim_time}],
-        ),
+        slam_toolbox,
         Node(
             package="nav2_controller",
             executable="controller_server",
@@ -282,6 +296,29 @@ def generate_launch_description() -> LaunchDescription:
         ),
     ]
 
+    configure_slam_toolbox = EmitEvent(
+        event=ChangeState(
+            lifecycle_node_matcher=matches_action(slam_toolbox),
+            transition_id=Transition.TRANSITION_CONFIGURE,
+        )
+    )
+
+    activate_slam_toolbox = RegisterEventHandler(
+        OnStateTransition(
+            target_lifecycle_node=slam_toolbox,
+            start_state="configuring",
+            goal_state="inactive",
+            entities=[
+                EmitEvent(
+                    event=ChangeState(
+                        lifecycle_node_matcher=matches_action(slam_toolbox),
+                        transition_id=Transition.TRANSITION_ACTIVATE,
+                    )
+                )
+            ],
+        )
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument("use_sim_time", default_value="true"),
@@ -301,5 +338,7 @@ def generate_launch_description() -> LaunchDescription:
             route_graph_builder,
             start_navigation_after_graph,
             *nodes,
+            activate_slam_toolbox,
+            configure_slam_toolbox,
         ]
     )

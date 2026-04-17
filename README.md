@@ -1,6 +1,6 @@
 # ROS 2 Forklift Navigation Stack
 
-Стенд на `ROS 2 Humble + Gazebo Sim + Nav2` для rear-steer погрузчика.
+Стенд на `ROS 2 Jazzy + Gazebo Sim + Nav2` для rear-steer погрузчика.
 
 Текущая архитектура:
 

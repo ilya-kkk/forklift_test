@@ -1,9 +1,9 @@
 <!--
-  Route-only NavigateToPose BT for ROS 2 Humble.
+  Route-only NavigateToPose BT for ROS 2 Jazzy.
   This intentionally removes the first/last-mile freespace planning so the
   planned path stays on the route graph computed by route_server.
 -->
-<root main_tree_to_execute="MainTree">
+<root BTCPP_format="4" main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
     <RecoveryNode number_of_retries="6" name="NavigateRecovery">
       <PipelineSequence name="NavigateOnRouteGraph">

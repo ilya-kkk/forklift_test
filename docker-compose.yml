@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: forklift_demo:humble
+    image: forklift_demo:jazzy
     container_name: forklift_demo_sim
     network_mode: host
     ipc: host
@@ -12,9 +12,9 @@ services:
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
     volumes:
       - .:/ws
-      - colcon_build:/ws/build
-      - colcon_install:/ws/install
-      - colcon_log:/ws/log
+      - colcon_build_jazzy:/ws/build
+      - colcon_install_jazzy:/ws/install
+      - colcon_log_jazzy:/ws/log
     command: >
       bash -lc "
       colcon build --symlink-install --packages-up-to forklift_demo_description &&
@@ -22,7 +22,7 @@ services:
       ros2 launch forklift_demo_description sim_followpath.launch.py launch_rviz:=false"
 
   rviz:
-    image: forklift_demo:humble
+    image: forklift_demo:jazzy
     container_name: forklift_demo_rviz
     user: "1000:1000"
     depends_on:
@@ -41,7 +41,7 @@ services:
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
     volumes:
       - .:/ws
-      - colcon_install:/ws/install:ro
+      - colcon_install_jazzy:/ws/install:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-/dev/null}:/tmp/.Xauthority:ro
     command: >
@@ -54,7 +54,7 @@ services:
       ros2 run rviz2 rviz2 -d /ws/src/forklift_demo_description/rviz/demo.rviz"
 
   rqt:
-    image: forklift_demo:humble
+    image: forklift_demo:jazzy
     container_name: forklift_demo_rqt
     user: "1000:1000"
     depends_on:
@@ -73,7 +73,7 @@ services:
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
     volumes:
       - .:/ws
-      - colcon_install:/ws/install:ro
+      - colcon_install_jazzy:/ws/install:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-/dev/null}:/tmp/.Xauthority:ro
     command: >
@@ -91,6 +91,6 @@ services:
       -p default_vw_max:=1.0"
 
 volumes:
-  colcon_build:
-  colcon_install:
-  colcon_log:
+  colcon_build_jazzy:
+  colcon_install_jazzy:
+  colcon_log_jazzy:

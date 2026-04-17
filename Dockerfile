@@ -1,5 +1,5 @@
 ## syntax=docker/dockerfile:1.7
-FROM osrf/ros:humble-desktop
+FROM osrf/ros:jazzy-desktop
 
 SHELL ["/bin/bash", "-lc"]
 
@@ -19,15 +19,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         && apt-get install -y --no-install-recommends \
             python3-colcon-common-extensions \
             python3-setuptools \
-            ros-humble-navigation2 \
-            ros-humble-rmw-cyclonedds-cpp \
-            ros-humble-rqt-robot-steering \
-            ros-humble-robot-state-publisher \
-            ros-humble-ros-gz \
-            ros-humble-rviz2 \
-            ros-humble-slam-toolbox \
-            ros-humble-tf2-ros \
-            ros-humble-xacro; then \
+            ros-jazzy-navigation2 \
+            ros-jazzy-rmw-cyclonedds-cpp \
+            ros-jazzy-rqt-robot-steering \
+            ros-jazzy-robot-state-publisher \
+            ros-jazzy-ros-gz \
+            ros-jazzy-rviz2 \
+            ros-jazzy-slam-toolbox \
+            ros-jazzy-tf2-ros \
+            ros-jazzy-xacro; then \
             break; \
         fi; \
         if [ "$attempt" -eq 5 ]; then \

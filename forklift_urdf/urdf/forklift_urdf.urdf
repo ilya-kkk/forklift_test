@@ -1,0 +1,751 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="forklift_urdf">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="0.94148 -7.6988E-08 0.92711"
+        rpy="0 0 0" />
+      <mass
+        value="1000" />
+      <inertia
+        ixx="1152.4"
+        ixy="0.00030978"
+        ixz="23.035"
+        iyy="1102.3"
+        iyz="-5.1614E-05"
+        izz="320.85" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="left_lidar_link">
+    <inertial>
+      <origin
+        xyz="-6.9389E-18 0 6.9389E-18"
+        rpy="0 0 0" />
+      <mass
+        value="0.28464" />
+      <inertia
+        ixx="4.8105E-05"
+        ixy="-4.5139E-36"
+        ixz="9.5557E-09"
+        iyy="4.8105E-05"
+        iyz="9.2387E-38"
+        izz="6.8884E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/left_lidar_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/left_lidar_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_lidar_joint"
+    type="continuous">
+    <origin
+      xyz="1.27295476942974 0.418116775610435 0.0239999999999846"
+      rpy="0 -0.000459874311882969 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="left_lidar_link" />
+    <axis
+      xyz="0.000459874295673651 0 0.999999894257811" />
+  </joint>
+  <link
+    name="right_lidar_link">
+    <inertial>
+      <origin
+        xyz="-6.9389E-18 -5.5511E-17 6.9389E-18"
+        rpy="0 0 0" />
+      <mass
+        value="0.28464" />
+      <inertia
+        ixx="4.8105E-05"
+        ixy="6.6884E-53"
+        ixz="3.7885E-22"
+        iyy="4.8105E-05"
+        iyz="1.4522E-37"
+        izz="6.8884E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/right_lidar_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/right_lidar_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_lidar_joint"
+    type="continuous">
+    <origin
+      xyz="1.27295476942975 -0.418116775610423 0.0239999999999846"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="right_lidar_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="rear_lidar_link">
+    <inertial>
+      <origin
+        xyz="0 0 0.012"
+        rpy="0 0 0" />
+      <mass
+        value="0.28464" />
+      <inertia
+        ixx="4.8105E-05"
+        ixy="-6.0185E-36"
+        ixz="6.2789E-37"
+        iyy="4.8105E-05"
+        iyz="-2.0758E-37"
+        izz="6.8884E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/rear_lidar_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/rear_lidar_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="rear_lidar_joint"
+    type="fixed">
+    <origin
+      xyz="0.705969649244955 0 0.0559999999999846"
+      rpy="0 0.000459874311882969 -3.14159265358978" />
+    <parent
+      link="base_link" />
+    <child
+      link="rear_lidar_link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="up_lidar_link">
+    <inertial>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <mass
+        value="0.284643374059973" />
+      <inertia
+        ixx="4.81274052613001E-05"
+        ixy="1.31890466162261E-35"
+        ixz="6.86039242171329E-07"
+        iyy="4.81047302161354E-05"
+        iyz="-3.03755087092172E-36"
+        izz="6.88610214773487E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/up_lidar_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/up_lidar_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="up_lidar_joint"
+    type="fixed">
+    <origin
+      xyz="1.12608148221207 0 1.98742227080532"
+      rpy="0 -0.0334999573301522 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="up_lidar_link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="3d_lidar_link">
+    <inertial>
+      <origin
+        xyz="-0.04 -1.65556789141244E-18 2.22044604925031E-16"
+        rpy="0 0 0" />
+      <mass
+        value="3.0576" />
+      <inertia
+        ixx="0.00249703999999999"
+        ixy="2.84905452540826E-19"
+        ixz="-2.16840434497101E-19"
+        iyy="0.00287924"
+        iyz="-3.13920448401802E-19"
+        izz="0.00287924" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/3d_lidar_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/3d_lidar_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="3d_lidar_joint"
+    type="fixed">
+    <origin
+      xyz="1.25994093768194 0 1.80699999999998"
+      rpy="0 0.349065850398863 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="3d_lidar_link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="fork_left_wheel_link">
+    <inertial>
+      <origin
+        xyz="0 1.73472347597681E-18 0"
+        rpy="0 0 0" />
+      <mass
+        value="2.74449534217604" />
+      <inertia
+        ixx="0.00221846706825897"
+        ixy="6.44168556386896E-20"
+        ixz="8.80104428298725E-21"
+        iyy="0.00221846706825897"
+        iyz="-2.28461613208865E-20"
+        izz="0.00219559627374084" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/fork_left_wheel_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/fork_left_wheel_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="fork_left_wheel_joint"
+    type="continuous">
+    <origin
+      xyz="0 0.2 0"
+      rpy="1.5708 -0.00045987 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="fork_left_wheel_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="fork_right_wheel_link">
+    <inertial>
+      <origin
+        xyz="-2.22044604925031E-16 3.46944695195361E-18 2.77555756156289E-17"
+        rpy="0 0 0" />
+      <mass
+        value="2.74449534217604" />
+      <inertia
+        ixx="0.00221846706825897"
+        ixy="3.66129991450671E-20"
+        ixz="-2.44262349268226E-19"
+        iyy="0.00221846706825897"
+        iyz="-2.19879982597049E-20"
+        izz="0.00219559627374084" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/fork_right_wheel_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/fork_right_wheel_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="fork_right_wheel_joint"
+    type="continuous">
+    <origin
+      xyz="0 -0.2 0"
+      rpy="1.5708 -0.00045987 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="fork_right_wheel_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="fork_link">
+    <inertial>
+      <origin
+        xyz="0.20613 1.3173E-13 0.16012"
+        rpy="0 0 0" />
+      <mass
+        value="109.28" />
+      <inertia
+        ixx="7.0019"
+        ixy="-4.1494E-13"
+        ixz="2.401"
+        iyy="14.74"
+        iyz="9.8772E-14"
+        izz="18.824" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/fork_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/fork_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="fork_joint"
+    type="prismatic">
+    <origin
+      xyz="0.697 0 -0.01"
+      rpy="0 0.00045987 -3.1416" />
+    <parent
+      link="base_link" />
+    <child
+      link="fork_link" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="1"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="camera_link">
+    <inertial>
+      <origin
+        xyz="-0.0125000000000033 1.25403778269255E-13 -9.43689570931383E-16"
+        rpy="0 0 0" />
+      <mass
+        value="1.1505" />
+      <inertia
+        ixx="0.001574651"
+        ixy="-3.81473760349349E-19"
+        ixz="-1.05515558313288E-20"
+        iyy="0.000299609375"
+        iyz="-1.03094594493258E-19"
+        izz="0.001394885375" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/camera_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/camera_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="camera_joint"
+    type="fixed">
+    <origin
+      xyz="0.04 0 0.395"
+      rpy="0 0 0" />
+    <parent
+      link="fork_link" />
+    <child
+      link="camera_link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_steering_link">
+    <inertial>
+      <origin
+        xyz="1.37962288702387E-05 0 0.0299999968277342"
+        rpy="0 0 0" />
+      <mass
+        value="0.330809706423005" />
+      <inertia
+        ixx="0.000117850940860182"
+        ixy="1.322946336317E-40"
+        ixz="-3.70818982600544E-08"
+        iyy="0.000117850957913196"
+        iyz="2.87675612416745E-37"
+        izz="3.72161090256018E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/left_steering_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/left_steering_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_steering_joint"
+    type="revolute">
+    <origin
+      xyz="1.065 0.258 0.235"
+      rpy="0 -0.00045987 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="left_steering_link" />
+    <axis
+      xyz="0.00045987 0 1" />
+    <limit
+      lower="-31.416"
+      upper="31.416"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="left_wheel_link">
+    <inertial>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <mass
+        value="19.1134497044403" />
+      <inertia
+        ixx="0.057474143261252"
+        ixy="-5.16920490786777E-18"
+        ixz="1.68354359518156E-23"
+        iyy="0.057474143261252"
+        iyz="2.19872438968088E-18"
+        izz="0.0955672485222015" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/left_wheel_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/left_wheel_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_wheel_joint"
+    type="continuous">
+    <origin
+      xyz="-0.066113 0 -0.17497"
+      rpy="1.5708 0 0" />
+    <parent
+      link="left_steering_link" />
+    <child
+      link="left_wheel_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="right_steering_link">
+    <inertial>
+      <origin
+        xyz="1.37962288702109E-05 0 0.0299999968277342"
+        rpy="0 0 0" />
+      <mass
+        value="0.330809706423005" />
+      <inertia
+        ixx="0.000117850940860182"
+        ixy="1.322946336317E-40"
+        ixz="-3.70818982600544E-08"
+        iyy="0.000117850957913196"
+        iyz="2.87675612416745E-37"
+        izz="3.72161090256018E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/right_steering_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/right_steering_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_steering_joint"
+    type="revolute">
+    <origin
+      xyz="1.07 -0.264 0.235"
+      rpy="0 -0.00045987 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="right_steering_link" />
+    <axis
+      xyz="0.00045987 0 1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="right_wheel_link">
+    <inertial>
+      <origin
+        xyz="0 -1.38777878078145E-17 0"
+        rpy="0 0 0" />
+      <mass
+        value="38.2881604656256" />
+      <inertia
+        ixx="0.181469927206871"
+        ixy="1.97324795392362E-17"
+        ixz="3.10993926085734E-18"
+        iyy="0.181469927206871"
+        iyz="1.95059178163127E-18"
+        izz="0.2991262536377" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/right_wheel_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_urdf/meshes/right_wheel_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_wheel_joint"
+    type="continuous">
+    <origin
+      xyz="-6.8981E-05 0 -0.15"
+      rpy="1.5708 0 0" />
+    <parent
+      link="right_steering_link" />
+    <child
+      link="right_wheel_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+</robot>
