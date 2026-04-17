@@ -40,6 +40,9 @@ def generate_launch_description() -> LaunchDescription:
     route_server_params = PathJoinSubstitution(
         [pkg_share, "config", "route_server_params.yaml"]
     )
+    route_graph_bt_xml = PathJoinSubstitution(
+        [pkg_share, "behavior_trees", "navigate_to_pose_on_route_graph.xml"]
+    )
     collision_monitor_params = PathJoinSubstitution(
         [pkg_share, "config", "collision_monitor_params.yaml"]
     )
@@ -166,7 +169,13 @@ def generate_launch_description() -> LaunchDescription:
         executable="bt_navigator",
         name="bt_navigator",
         output="screen",
-        parameters=[nav2_params, {"use_sim_time": use_sim_time}],
+        parameters=[
+            nav2_params,
+            {
+                "use_sim_time": use_sim_time,
+                "default_nav_to_pose_bt_xml": route_graph_bt_xml,
+            },
+        ],
     )
 
     lifecycle_manager = Node(
@@ -237,7 +246,7 @@ def generate_launch_description() -> LaunchDescription:
                 {
                     "use_sim_time": use_sim_time,
                     "robot_description": robot_description,
-                    "cmd_vel_frame": "tracking_link",
+                    "cmd_vel_frame": "base_link",
                 }
             ],
         ),

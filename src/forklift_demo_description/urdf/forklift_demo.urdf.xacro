@@ -26,9 +26,11 @@
     <color rgba="0.72 0.72 0.72 1.0"/>
   </material>
 
-  <link name="base_link">
+  <link name="base_link"/>
+
+  <link name="chassis_link">
     <visual>
-      <origin xyz="$(arg body_x_offset) 0 0.25" rpy="0 0 0"/>
+      <origin xyz="0.80 0 0.25" rpy="0 0 0"/>
       <geometry>
         <box size="$(arg base_length) $(arg base_width) $(arg base_height)"/>
       </geometry>
@@ -36,12 +38,10 @@
     </visual>
   </link>
 
-  <link name="tracking_link"/>
-
-  <joint name="tracking_joint" type="fixed">
+  <joint name="base_to_chassis_joint" type="fixed">
     <parent link="base_link"/>
-    <child link="tracking_link"/>
-    <origin xyz="0.42 0 0" rpy="0 0 0"/>
+    <child link="chassis_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
   <link name="fork_carriage_link">
@@ -62,9 +62,9 @@
   </link>
 
   <joint name="fork_lift_joint" type="prismatic">
-    <parent link="base_link"/>
+    <parent link="chassis_link"/>
     <child link="fork_carriage_link"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <origin xyz="0.42 0 0" rpy="0 0 3.14159265359"/>
     <axis xyz="0 0 1"/>
     <limit effort="5000" velocity="0.4" lower="0.0" upper="0.28"/>
   </joint>
@@ -90,25 +90,25 @@
   </link>
 
   <joint name="front_left_wheel_joint" type="continuous">
-    <parent link="base_link"/>
+    <parent link="chassis_link"/>
     <child link="front_left_wheel_link"/>
-    <origin xyz="0.42 0.135 0.03" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
+    <origin xyz="0 -0.135 0.03" rpy="0 0 3.14159265359"/>
+    <axis xyz="0 -1 0"/>
   </joint>
 
   <joint name="front_right_wheel_joint" type="continuous">
-    <parent link="base_link"/>
+    <parent link="chassis_link"/>
     <child link="front_right_wheel_link"/>
-    <origin xyz="0.42 -0.135 0.03" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
+    <origin xyz="0 0.135 0.03" rpy="0 0 3.14159265359"/>
+    <axis xyz="0 -1 0"/>
   </joint>
 
   <link name="rear_steer_link"/>
 
   <joint name="rear_steering_joint" type="revolute">
-    <parent link="base_link"/>
+    <parent link="chassis_link"/>
     <child link="rear_steer_link"/>
-    <origin xyz="-0.42 0.35 0.18" rpy="0 0 0"/>
+    <origin xyz="0.84 -0.35 0.18" rpy="0 0 3.14159265359"/>
     <axis xyz="0 0 1"/>
     <limit effort="120" velocity="2.0" lower="-$(arg max_steering_angle)" upper="$(arg max_steering_angle)"/>
   </joint>
@@ -127,16 +127,16 @@
     <parent link="rear_steer_link"/>
     <child link="rear_drive_wheel_link"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
+    <axis xyz="0 -1 0"/>
     <limit effort="800" velocity="12.0"/>
   </joint>
 
   <link name="rear_right_caster_link"/>
 
   <joint name="rear_right_steering_joint" type="continuous">
-    <parent link="base_link"/>
+    <parent link="chassis_link"/>
     <child link="rear_right_caster_link"/>
-    <origin xyz="-0.34 -0.35 0.18" rpy="0 0 0"/>
+    <origin xyz="0.76 0.35 0.18" rpy="0 0 3.14159265359"/>
     <axis xyz="0 0 1"/>
   </joint>
 
@@ -154,7 +154,7 @@
     <parent link="rear_right_caster_link"/>
     <child link="rear_right_wheel_link"/>
     <origin xyz="-0.08 0 0" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
+    <axis xyz="0 -1 0"/>
   </joint>
 
   <link name="laser_link">
@@ -168,9 +168,9 @@
   </link>
 
   <joint name="laser_joint" type="fixed">
-    <parent link="base_link"/>
+    <parent link="chassis_link"/>
     <child link="laser_link"/>
-    <origin xyz="$(arg laser_x) 0 $(arg laser_z)" rpy="0 0 0"/>
+    <origin xyz="0.80 0 $(arg laser_z)" rpy="0 0 0"/>
   </joint>
 
 </robot>

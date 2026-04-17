@@ -5,43 +5,10 @@
     <self_collide>false</self_collide>
     <static>false</static>
 
+    <canonical_link>chassis_link</canonical_link>
+
     <link name="base_link">
       <pose>0 0 0.25 0 0 0</pose>
-      <inertial>
-        <mass>80.0</mass>
-        <inertia>
-          <ixx>8.0</ixx>
-          <iyy>12.0</iyy>
-          <izz>15.0</izz>
-          <ixy>0.0</ixy>
-          <ixz>0.0</ixz>
-          <iyz>0.0</iyz>
-        </inertia>
-      </inertial>
-      <collision name="base_collision">
-        <pose>-0.38 0 0 0 0 0</pose>
-        <geometry>
-          <box>
-            <size>0.36 0.8 0.32</size>
-          </box>
-        </geometry>
-      </collision>
-      <visual name="base_visual">
-        <pose>-0.38 0 0 0 0 0</pose>
-        <geometry>
-          <box>
-            <size>0.36 0.8 0.32</size>
-          </box>
-        </geometry>
-        <material>
-          <ambient>0.90 0.62 0.18 1.0</ambient>
-          <diffuse>0.90 0.62 0.18 1.0</diffuse>
-        </material>
-      </visual>
-    </link>
-
-    <link name="tracking_link">
-      <pose>0.42 0 0.25 0 0 0</pose>
       <inertial>
         <mass>0.001</mass>
         <inertia>
@@ -55,13 +22,48 @@
       </inertial>
     </link>
 
-    <joint name="tracking_joint" type="fixed">
+    <link name="chassis_link">
+      <pose>0 0 0.25 0 0 0</pose>
+      <inertial>
+        <mass>80.0</mass>
+        <inertia>
+          <ixx>8.0</ixx>
+          <iyy>12.0</iyy>
+          <izz>15.0</izz>
+          <ixy>0.0</ixy>
+          <ixz>0.0</ixz>
+          <iyz>0.0</iyz>
+        </inertia>
+      </inertial>
+      <collision name="base_collision">
+        <pose>0.80 0 0 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.36 0.8 0.32</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name="base_visual">
+        <pose>0.80 0 0 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.36 0.8 0.32</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.90 0.62 0.18 1.0</ambient>
+          <diffuse>0.90 0.62 0.18 1.0</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <joint name="base_to_chassis_joint" type="fixed">
       <parent>base_link</parent>
-      <child>tracking_link</child>
+      <child>chassis_link</child>
     </joint>
 
     <link name="fork_carriage_link">
-      <pose>0 0 0.25 0 0 0</pose>
+      <pose>0.42 0 0.25 0 0 3.14159265359</pose>
       <inertial>
         <mass>6.0</mass>
         <inertia>
@@ -116,7 +118,7 @@
     </link>
 
     <link name="front_left_wheel_link">
-      <pose>0.42 0.135 0.03 0 0 0</pose>
+      <pose>0 -0.135 0.03 0 0 3.14159265359</pose>
       <inertial>
         <mass>0.05</mass>
         <inertia>
@@ -167,7 +169,7 @@
     </link>
 
     <link name="front_right_wheel_link">
-      <pose>0.42 -0.135 0.03 0 0 0</pose>
+      <pose>0 0.135 0.03 0 0 3.14159265359</pose>
       <inertial>
         <mass>0.05</mass>
         <inertia>
@@ -218,10 +220,10 @@
     </link>
 
     <joint name="front_left_wheel_joint" type="revolute">
-      <parent>base_link</parent>
+      <parent>chassis_link</parent>
       <child>front_left_wheel_link</child>
       <axis>
-        <xyz>0 1 0</xyz>
+        <xyz>0 -1 0</xyz>
         <limit>
           <effort>40</effort>
           <velocity>20.0</velocity>
@@ -230,10 +232,10 @@
     </joint>
 
     <joint name="front_right_wheel_joint" type="revolute">
-      <parent>base_link</parent>
+      <parent>chassis_link</parent>
       <child>front_right_wheel_link</child>
       <axis>
-        <xyz>0 1 0</xyz>
+        <xyz>0 -1 0</xyz>
         <limit>
           <effort>40</effort>
           <velocity>20.0</velocity>
@@ -242,7 +244,7 @@
     </joint>
 
     <joint name="fork_lift_joint" type="prismatic">
-      <parent>base_link</parent>
+      <parent>chassis_link</parent>
       <child>fork_carriage_link</child>
       <axis>
         <xyz>0 0 1</xyz>
@@ -259,7 +261,7 @@
     </joint>
 
     <link name="rear_steer_link">
-      <pose>-0.42 0.35 0.18 0 0 0</pose>
+      <pose>0.84 -0.35 0.18 0 0 3.14159265359</pose>
       <inertial>
         <mass>0.5</mass>
         <inertia>
@@ -274,7 +276,7 @@
     </link>
 
     <joint name="rear_steering_joint" type="revolute">
-      <parent>base_link</parent>
+      <parent>chassis_link</parent>
       <child>rear_steer_link</child>
       <axis>
         <xyz>0 0 1</xyz>
@@ -288,7 +290,7 @@
     </joint>
 
     <link name="rear_drive_wheel_link">
-      <pose>-0.42 0.35 0.18 0 0 0</pose>
+      <pose>0.84 -0.35 0.18 0 0 3.14159265359</pose>
       <inertial>
         <mass>2.0</mass>
         <inertia>
@@ -342,7 +344,7 @@
       <parent>rear_steer_link</parent>
       <child>rear_drive_wheel_link</child>
       <axis>
-        <xyz>0 1 0</xyz>
+        <xyz>0 -1 0</xyz>
         <dynamics>
           <damping>3.0</damping>
           <friction>35.0</friction>
@@ -355,7 +357,7 @@
     </joint>
 
     <link name="rear_right_caster_link">
-      <pose>-0.34 -0.35 0.18 0 0 0</pose>
+      <pose>0.76 0.35 0.18 0 0 3.14159265359</pose>
       <inertial>
         <mass>0.5</mass>
         <inertia>
@@ -370,7 +372,7 @@
     </link>
 
     <joint name="rear_right_steering_joint" type="revolute">
-      <parent>base_link</parent>
+      <parent>chassis_link</parent>
       <child>rear_right_caster_link</child>
       <axis>
         <xyz>0 0 1</xyz>
@@ -385,7 +387,7 @@
     </joint>
 
     <link name="rear_right_wheel_link">
-      <pose>-0.42 -0.35 0.18 0 0 0</pose>
+      <pose>0.84 0.35 0.18 0 0 3.14159265359</pose>
       <inertial>
         <mass>2.0</mass>
         <inertia>
@@ -439,7 +441,7 @@
       <parent>rear_right_caster_link</parent>
       <child>rear_right_wheel_link</child>
       <axis>
-        <xyz>0 1 0</xyz>
+        <xyz>0 -1 0</xyz>
         <dynamics>
           <damping>0.02</damping>
         </dynamics>
@@ -451,7 +453,7 @@
     </joint>
 
     <link name="laser_link">
-      <pose>-0.38 0.0 0.55 0 0 0</pose>
+      <pose>0.8 0.0 0.55 0 0 0</pose>
       <inertial>
         <mass>0.2</mass>
         <inertia>
@@ -500,7 +502,7 @@
     </link>
 
     <joint name="laser_joint" type="fixed">
-      <parent>base_link</parent>
+      <parent>chassis_link</parent>
       <child>laser_link</child>
     </joint>
 

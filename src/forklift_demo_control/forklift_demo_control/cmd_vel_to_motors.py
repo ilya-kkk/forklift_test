@@ -44,7 +44,7 @@ class CmdVelToMotors(Node):
         self.declare_parameter("motion_mode", BODY_FIRST)
         self.declare_parameter("reverse_velocity_scale", 0.5)
         self.declare_parameter("motion_mode_linear_deadband", 0.02)
-        self.declare_parameter("cmd_vel_frame", "tracking_link")
+        self.declare_parameter("cmd_vel_frame", "base_link")
         self.declare_parameter("steering_joint_name", "rear_steering_joint")
         self.declare_parameter("drive_wheel_joint_name", "rear_wheel_joint")
         self.declare_parameter("publish_rate", 30.0)
@@ -259,12 +259,14 @@ class CmdVelToMotors(Node):
 
         max_linear_velocity = self._max_linear_velocity()
         speed = min(abs(input_linear_x), max_linear_velocity)
-        if self._motion_mode == FORKS_FIRST:
-            desired_linear_x = -min(
-                speed, max_linear_velocity * self._reverse_velocity_scale
-            )
-        else:
-            desired_linear_x = speed
+        preferred_direction_sign = -1.0 if self._motion_mode == FORKS_FIRST else 1.0
+        is_reverse_command = input_linear_x < 0.0
+        if is_reverse_command:
+            speed = min(speed, max_linear_velocity * self._reverse_velocity_scale)
+
+        desired_linear_x = preferred_direction_sign * math.copysign(
+            speed, input_linear_x
+        )
 
         scale = desired_linear_x / input_linear_x
         adjusted.linear.x *= scale
@@ -333,7 +335,7 @@ class CmdVelToMotors(Node):
         steering_limits = self._parse_joint_limits(steering_joint)
         cmd_vel_frame_pose = self._resolve_link_pose(
             joint_map=joint_map,
-            base_link=steering_parent,
+            source_link=steering_parent,
             target_link=cmd_vel_frame,
         )
 
@@ -428,10 +430,10 @@ class CmdVelToMotors(Node):
         self,
         *,
         joint_map,
-        base_link: str,
+        source_link: str,
         target_link: str,
     ) -> Tuple[float, float, float]:
-        if target_link == base_link:
+        if target_link == source_link:
             return 0.0, 0.0, 0.0
 
         child_to_joint = {}
@@ -443,24 +445,45 @@ class CmdVelToMotors(Node):
             if child_name:
                 child_to_joint[child_name] = joint
 
+        source_root, source_pose = self._resolve_pose_from_root(
+            child_to_joint=child_to_joint, link_name=source_link
+        )
+        target_root, target_pose = self._resolve_pose_from_root(
+            child_to_joint=child_to_joint, link_name=target_link
+        )
+        if source_root != target_root:
+            raise ValueError(
+                "Cannot resolve pose of link '%s' relative to '%s' because they do not "
+                "share the same fixed-joint root."
+                % (target_link, source_link)
+            )
+
+        source_x, source_y, source_yaw = source_pose
+        target_x, target_y, target_yaw = target_pose
+        delta_x = target_x - source_x
+        delta_y = target_y - source_y
+        relative_x = math.cos(source_yaw) * delta_x + math.sin(source_yaw) * delta_y
+        relative_y = -math.sin(source_yaw) * delta_x + math.cos(source_yaw) * delta_y
+        relative_yaw = normalize_angle(target_yaw - source_yaw)
+        return relative_x, relative_y, relative_yaw
+
+    def _resolve_pose_from_root(
+        self, *, child_to_joint, link_name: str
+    ) -> Tuple[str, Tuple[float, float, float]]:
         pose_chain = []
-        current_link = target_link
-        while current_link != base_link:
+        current_link = link_name
+        while True:
             joint = child_to_joint.get(current_link)
             if joint is None:
-                raise ValueError(
-                    "Cannot resolve pose of link '%s' relative to '%s' from URDF."
-                    % (target_link, base_link)
-                )
+                break
 
             joint_type = joint.get("type", "")
             if joint_type != "fixed":
                 raise ValueError(
-                    "cmd_vel frame '%s' must be connected to '%s' only through fixed joints, "
-                    "but joint '%s' has type '%s'."
+                    "Link '%s' must be connected through fixed joints only, but joint "
+                    "'%s' has type '%s'."
                     % (
-                        target_link,
-                        base_link,
+                        link_name,
                         joint.get("name", "<unknown>"),
                         joint_type,
                     )
@@ -480,9 +503,9 @@ class CmdVelToMotors(Node):
             rotated_y = math.sin(yaw) * origin_x + math.cos(yaw) * origin_y
             x += rotated_x
             y += rotated_y
-            yaw += origin_yaw
+            yaw = normalize_angle(yaw + origin_yaw)
 
-        return x, y, yaw
+        return current_link, (x, y, yaw)
 
     def _parse_joint_limits(self, joint_element: ET.Element) -> Tuple[float, float]:
         limit_element = joint_element.find("limit")

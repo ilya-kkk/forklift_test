@@ -53,6 +53,43 @@ services:
       source /ws/install/setup.bash &&
       ros2 run rviz2 rviz2 -d /ws/src/forklift_demo_description/rviz/demo.rviz"
 
+  rqt:
+    image: forklift_demo:humble
+    container_name: forklift_demo_rqt
+    user: "1000:1000"
+    depends_on:
+      - sim
+    network_mode: host
+    ipc: host
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+      QT_X11_NO_MITSHM: "1"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      HOME: /tmp/rqt-home
+      ROS_LOG_DIR: /tmp/rqt-home/.ros/log
+      XDG_RUNTIME_DIR: /tmp/runtime-user
+      XAUTHORITY: /tmp/.Xauthority
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+    volumes:
+      - .:/ws
+      - colcon_install:/ws/install:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-/dev/null}:/tmp/.Xauthority:ro
+    command: >
+      bash -lc "
+      mkdir -p /tmp/rqt-home/.ros/log &&
+      mkdir -p /tmp/runtime-user &&
+      chmod 700 /tmp/runtime-user &&
+      until [ -f /ws/install/setup.bash ]; do sleep 1; done &&
+      source /ws/install/setup.bash &&
+      ros2 run rqt_robot_steering rqt_robot_steering --ros-args
+      -p default_topic:=/cmd_vel
+      -p default_vx_min:=-0.85
+      -p default_vx_max:=0.85
+      -p default_vw_min:=-1.0
+      -p default_vw_max:=1.0"
+
 volumes:
   colcon_build:
   colcon_install:
