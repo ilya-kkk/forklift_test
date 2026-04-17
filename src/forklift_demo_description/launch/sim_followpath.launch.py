@@ -1,5 +1,9 @@
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
+    AppendEnvironmentVariable,
     DeclareLaunchArgument,
     EmitEvent,
     IncludeLaunchDescription,
@@ -10,17 +14,17 @@ from launch.conditions import IfCondition
 from launch.events import matches_action
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.event_handlers import OnStateTransition
 from launch_ros.events.lifecycle import ChangeState
-from launch_ros.substitutions import FindPackageShare
+from launch_ros.parameter_descriptions import ParameterValue
 from lifecycle_msgs.msg import Transition
 
 
 def generate_launch_description() -> LaunchDescription:
-    pkg_share = FindPackageShare("forklift_demo_description")
-    ros_gz_sim_share = FindPackageShare("ros_gz_sim")
+    pkg_share = get_package_share_directory("forklift_demo_description")
+    ros_gz_sim_share = get_package_share_directory("ros_gz_sim")
 
     use_sim_time = LaunchConfiguration("use_sim_time")
     launch_rviz = LaunchConfiguration("launch_rviz")
@@ -31,36 +35,30 @@ def generate_launch_description() -> LaunchDescription:
 
     graph_filepath = "/tmp/forklift_demo_route_graph.geojson"
 
-    robot_xacro = PathJoinSubstitution(
-        [pkg_share, "urdf", "forklift_demo.urdf.xacro"]
+    robot_xacro = os.path.join(pkg_share, "urdf", "forklift_demo.urdf.xacro")
+    pallet_model = os.path.join(pkg_share, "models", "euro_pallet", "model.sdf")
+    bridge_config = os.path.join(pkg_share, "config", "bridge_config.yaml")
+    nav2_params = os.path.join(pkg_share, "config", "nav2_params.yaml")
+    route_server_params = os.path.join(
+        pkg_share, "config", "route_server_params.yaml"
     )
-    gazebo_model = PathJoinSubstitution(
-        [pkg_share, "models", "forklift_demo", "model.sdf"]
+    route_graph_bt_xml = os.path.join(
+        pkg_share, "behavior_trees", "navigate_to_pose_on_route_graph.xml"
     )
-    pallet_model = PathJoinSubstitution(
-        [pkg_share, "models", "euro_pallet", "model.sdf"]
+    collision_monitor_params = os.path.join(
+        pkg_share, "config", "collision_monitor_params.yaml"
     )
-    bridge_config = PathJoinSubstitution([pkg_share, "config", "bridge_config.yaml"])
-    nav2_params = PathJoinSubstitution([pkg_share, "config", "nav2_params.yaml"])
-    route_server_params = PathJoinSubstitution(
-        [pkg_share, "config", "route_server_params.yaml"]
-    )
-    route_graph_bt_xml = PathJoinSubstitution(
-        [pkg_share, "behavior_trees", "navigate_to_pose_on_route_graph.xml"]
-    )
-    collision_monitor_params = PathJoinSubstitution(
-        [pkg_share, "config", "collision_monitor_params.yaml"]
-    )
-    slam_params = PathJoinSubstitution([pkg_share, "config", "slam_toolbox.yaml"])
-    rviz_config = PathJoinSubstitution([pkg_share, "rviz", "demo.rviz"])
+    slam_params = os.path.join(pkg_share, "config", "slam_toolbox.yaml")
+    rviz_config = os.path.join(pkg_share, "rviz", "demo.rviz")
 
-    robot_description = Command(
-        ["xacro ", robot_xacro, " use_sim_time:=", use_sim_time]
+    robot_description = ParameterValue(
+        Command(["xacro ", robot_xacro, " use_sim_time:=", use_sim_time]),
+        value_type=str,
     )
 
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            PathJoinSubstitution([ros_gz_sim_share, "launch", "gz_sim.launch.py"])
+            os.path.join(ros_gz_sim_share, "launch", "gz_sim.launch.py")
         ),
         launch_arguments={"gz_args": ["-r -s --headless-rendering -v 2 ", world]}.items(),
     )
@@ -74,14 +72,14 @@ def generate_launch_description() -> LaunchDescription:
             "forklift_demo",
             "-world",
             "demo_room",
-            "-file",
-            gazebo_model,
+            "-topic",
+            "robot_description",
             "-x",
             x,
             "-y",
             y,
             "-z",
-            "0.18",
+            "0.05",
             "-Y",
             yaw,
         ],
@@ -261,6 +259,31 @@ def generate_launch_description() -> LaunchDescription:
                     "use_sim_time": use_sim_time,
                     "robot_description": robot_description,
                     "cmd_vel_frame": "base_link",
+                    "steering_joint_name": "right_steering_joint",
+                    "drive_wheel_joint_name": "right_wheel_joint",
+                    "steering_cmd_topic": "/forklift/right_steering_cmd",
+                    "wheel_cmd_topic": "/forklift/right_wheel_cmd",
+                    "drive_wheel_radius": 0.125,
+                }
+            ],
+        ),
+        Node(
+            package="forklift_demo_control",
+            executable="fork_position_controller",
+            name="fork_position_controller",
+            output="screen",
+            parameters=[
+                {
+                    "use_sim_time": use_sim_time,
+                    "joint_name": "fork_joint",
+                    "position_cmd_topic": "/forklift/fork_cmd",
+                    "velocity_cmd_topic": "/forklift/fork_velocity_cmd",
+                    "position_lower_limit": 0.0,
+                    "position_upper_limit": 1.0,
+                    "max_velocity": 0.35,
+                    "p_gain": 2.5,
+                    "deadband": 0.002,
+                    "publish_rate_hz": 30.0,
                 }
             ],
         ),
@@ -325,13 +348,15 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("launch_rviz", default_value="false"),
             DeclareLaunchArgument(
                 "world",
-                default_value=PathJoinSubstitution(
-                    [pkg_share, "worlds", "square_room.sdf"]
-                ),
+                default_value=os.path.join(pkg_share, "worlds", "square_room.sdf"),
             ),
             DeclareLaunchArgument("x", default_value="3.0"),
             DeclareLaunchArgument("y", default_value="3.5"),
             DeclareLaunchArgument("yaw", default_value="0.0"),
+            AppendEnvironmentVariable(
+                "GZ_SIM_RESOURCE_PATH",
+                os.path.dirname(pkg_share),
+            ),
             gazebo,
             bridge,
             TimerAction(period=2.0, actions=[spawn_robot, spawn_pallet]),

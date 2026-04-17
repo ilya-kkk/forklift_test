@@ -38,15 +38,16 @@ class CmdVelToMotors(Node):
 
         self.declare_parameter("robot_description", "")
         self.declare_parameter("cmd_vel_topic", "/cmd_vel")
-        self.declare_parameter("steering_cmd_topic", "/forklift/rear_steering_cmd")
-        self.declare_parameter("wheel_cmd_topic", "/forklift/rear_wheel_cmd")
+        self.declare_parameter("steering_cmd_topic", "/forklift/right_steering_cmd")
+        self.declare_parameter("wheel_cmd_topic", "/forklift/right_wheel_cmd")
         self.declare_parameter("motion_mode_topic", "/motion_mode")
         self.declare_parameter("motion_mode", BODY_FIRST)
         self.declare_parameter("reverse_velocity_scale", 0.5)
         self.declare_parameter("motion_mode_linear_deadband", 0.02)
         self.declare_parameter("cmd_vel_frame", "base_link")
-        self.declare_parameter("steering_joint_name", "rear_steering_joint")
-        self.declare_parameter("drive_wheel_joint_name", "rear_wheel_joint")
+        self.declare_parameter("steering_joint_name", "right_steering_joint")
+        self.declare_parameter("drive_wheel_joint_name", "right_wheel_joint")
+        self.declare_parameter("drive_wheel_radius", 0.0)
         self.declare_parameter("publish_rate", 30.0)
         self.declare_parameter("command_timeout_sec", 0.25)
         self.declare_parameter("motion_epsilon", 1e-4)
@@ -56,6 +57,9 @@ class CmdVelToMotors(Node):
         steering_joint_name = str(self.get_parameter("steering_joint_name").value)
         drive_wheel_joint_name = str(
             self.get_parameter("drive_wheel_joint_name").value
+        )
+        drive_wheel_radius = max(
+            0.0, float(self.get_parameter("drive_wheel_radius").value)
         )
         cmd_vel_frame = str(self.get_parameter("cmd_vel_frame").value)
         cmd_vel_topic = str(self.get_parameter("cmd_vel_topic").value)
@@ -87,6 +91,7 @@ class CmdVelToMotors(Node):
             cmd_vel_frame=cmd_vel_frame,
             steering_joint_name=steering_joint_name,
             drive_wheel_joint_name=drive_wheel_joint_name,
+            drive_wheel_radius_override=drive_wheel_radius,
         )
 
         self._latest_cmd = Twist()
@@ -312,6 +317,7 @@ class CmdVelToMotors(Node):
         cmd_vel_frame: str,
         steering_joint_name: str,
         drive_wheel_joint_name: str,
+        drive_wheel_radius_override: float,
     ) -> KinematicModel:
         if not robot_description.strip():
             raise ValueError(
@@ -363,7 +369,11 @@ class CmdVelToMotors(Node):
                 "Drive wheel link '%s' is missing in URDF." % drive_wheel_link_name
             )
 
-        wheel_radius = self._find_cylinder_radius(drive_wheel_link)
+        wheel_radius = (
+            drive_wheel_radius_override
+            if drive_wheel_radius_override > 0.0
+            else self._find_cylinder_radius(drive_wheel_link)
+        )
         if wheel_radius <= 0.0:
             raise ValueError("Drive wheel radius must be positive.")
 

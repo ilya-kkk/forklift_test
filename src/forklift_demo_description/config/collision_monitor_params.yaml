@@ -19,11 +19,11 @@ collision_monitor:
       visualize: true
       polygon_pub_topic: "collision_monitor/polygon_stop"
       enabled: true
-      points: "[[1.73, 0.45], [1.73, -0.45], [0.98, -0.45], [0.98, 0.45]]"
+      points: "[[2.10, 0.55], [2.10, -0.55], [1.38, -0.55], [1.38, 0.55]]"
 
     PolygonSlow:
       type: "polygon"
-      points: "[[2.23, 0.70], [2.23, -0.70], [0.98, -0.70], [0.98, 0.70]]"
+      points: "[[2.70, 0.80], [2.70, -0.80], [1.38, -0.80], [1.38, 0.80]]"
       action_type: "slowdown"
       slowdown_ratio: 0.35
       min_points: 4

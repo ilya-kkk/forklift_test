@@ -103,7 +103,7 @@ global_costmap:
       publish_frequency: 1.0
       track_unknown_space: true
       always_send_full_costmap: true
-      footprint: "[[0.98, 0.42], [0.98, -0.42], [-0.50, -0.42], [-0.50, 0.42]]"
+      footprint: "[[1.38, 0.50], [1.38, -0.50], [-0.58, -0.50], [-0.58, 0.50]]"
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
 
       static_layer:
@@ -142,7 +142,7 @@ local_costmap:
       update_frequency: 10.0
       publish_frequency: 5.0
       always_send_full_costmap: true
-      footprint: "[[0.98, 0.42], [0.98, -0.42], [-0.50, -0.42], [-0.50, 0.42]]"
+      footprint: "[[1.38, 0.50], [1.38, -0.50], [-0.58, -0.50], [-0.58, 0.50]]"
       plugins: ["obstacle_layer", "inflation_layer"]
 
       obstacle_layer:

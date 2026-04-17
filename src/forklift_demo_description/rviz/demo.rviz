@@ -16,7 +16,7 @@ Visualization Manager:
       Cell Size: 1
       Class: rviz_default_plugins/Grid
       Color: 160; 160; 164
-      Enabled: true
+      Enabled: false
       Name: Grid
       Plane: XY
       Plane Cell Count: 20
@@ -49,7 +49,7 @@ Visualization Manager:
       Enabled: true
       Filter size: 30
       Name: LaserScan
-      Size (Pixels): 3
+      Size (Pixels): 6
       Style: Flat Squares
       Topic:
         Depth: 5
@@ -57,6 +57,106 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /scan
+      Value: true
+    - Class: rviz_default_plugins/LaserScan
+      Color: 255; 170; 0
+      Enabled: true
+      Filter size: 30
+      Name: RearLidar
+      Size (Pixels): 6
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /scan_raw
+      Value: true
+    - Class: rviz_default_plugins/LaserScan
+      Color: 0; 170; 255
+      Enabled: true
+      Filter size: 30
+      Name: LeftLidar
+      Size (Pixels): 6
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /scan_left
+      Value: true
+    - Class: rviz_default_plugins/LaserScan
+      Color: 255; 0; 170
+      Enabled: true
+      Filter size: 30
+      Name: RightLidar
+      Size (Pixels): 6
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /scan_right
+      Value: true
+    - Class: rviz_default_plugins/LaserScan
+      Color: 80; 255; 120
+      Enabled: true
+      Filter size: 30
+      Name: UpLidar
+      Size (Pixels): 6
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /scan_up
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Class: rviz_default_plugins/PointCloud2
+      Color: 80; 220; 255
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Name: Lidar3D
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 2
+      Size (m): 0.03
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /lidar_3d/points
+      Use Fixed Frame: false
+      Use rainbow: false
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Class: rviz_default_plugins/PointCloud2
+      Color: 120; 255; 180
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Name: ForkCameraPoints
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 2
+      Size (m): 0.02
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /camera/points
+      Use Fixed Frame: false
+      Use rainbow: false
       Value: true
     - Alpha: 0.8
       Binary representation: false
