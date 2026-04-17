@@ -7,22 +7,22 @@ collision_monitor:
     cmd_vel_out_topic: "cmd_vel"
     transform_tolerance: 0.2
     source_timeout: 1.0
-    stop_pub_timeout: 0.5
+    stop_pub_timeout: 2.0
 
     polygons: ["PolygonStop", "PolygonSlow"]
 
     PolygonStop:
       type: "polygon"
-      points: [0.80, 0.45, 0.80, -0.45, 0.05, -0.45, 0.05, 0.45]
       action_type: "stop"
       max_points: 3
       visualize: true
       polygon_pub_topic: "collision_monitor/polygon_stop"
       enabled: true
+      points: [1.73, 0.45, 1.73, -0.45, 0.98, -0.45, 0.98, 0.45]
 
     PolygonSlow:
       type: "polygon"
-      points: [1.30, 0.70, 1.30, -0.70, 0.05, -0.70, 0.05, 0.70]
+      points: [2.23, 0.70, 2.23, -0.70, 0.98, -0.70, 0.98, 0.70]
       action_type: "slowdown"
       slowdown_ratio: 0.35
       max_points: 3
