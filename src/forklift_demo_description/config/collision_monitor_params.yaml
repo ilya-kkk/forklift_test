@@ -10,29 +10,67 @@ collision_monitor:
     source_timeout: 1.0
     stop_pub_timeout: 2.0
 
-    polygons: ["PolygonStop", "PolygonSlow"]
+    polygons: ["VelocityPolygonStop", "VelocityPolygonSlow"]
 
-    PolygonStop:
-      type: "polygon"
+    VelocityPolygonStop:
+      type: "velocity_polygon"
       action_type: "stop"
       min_points: 4
       visualize: true
-      polygon_pub_topic: "collision_monitor/polygon_stop"
+      polygon_pub_topic: "collision_monitor/velocity_polygon_stop"
       enabled: true
-      points: "[[2.10, 0.55], [2.10, -0.55], [1.38, -0.55], [1.38, 0.55]]"
+      holonomic: false
+      velocity_polygons: ["forward", "stopped"]
+      forward:
+        # Keep the previous stop frame only for forward linear motion.
+        points: "[[2.10, 0.55], [2.10, -0.55], [1.38, -0.55], [1.38, 0.55]]"
+        linear_min: 0.05
+        linear_max: 2.0
+        theta_min: -2.5
+        theta_max: 2.5
+      stopped:
+        # Fallback polygon for non-forward velocities.
+        points: "[[0.10, 0.10], [0.10, -0.10], [-0.10, -0.10], [-0.10, 0.10]]"
+        linear_min: -2.0
+        linear_max: 0.05
+        theta_min: -2.5
+        theta_max: 2.5
 
-    PolygonSlow:
-      type: "polygon"
-      points: "[[2.70, 0.80], [2.70, -0.80], [1.38, -0.80], [1.38, 0.80]]"
+    VelocityPolygonSlow:
+      type: "velocity_polygon"
       action_type: "slowdown"
       slowdown_ratio: 0.35
       min_points: 4
       visualize: true
-      polygon_pub_topic: "collision_monitor/polygon_slowdown"
+      polygon_pub_topic: "collision_monitor/velocity_polygon_slowdown"
       enabled: true
+      holonomic: false
+      velocity_polygons: ["forward", "stopped"]
+      forward:
+        # Keep the previous slowdown frame only for forward linear motion.
+        points: "[[2.70, 0.80], [2.70, -0.80], [1.38, -0.80], [1.38, 0.80]]"
+        linear_min: 0.05
+        linear_max: 2.0
+        theta_min: -2.5
+        theta_max: 2.5
+      stopped:
+        # Fallback polygon for non-forward velocities.
+        points: "[[0.10, 0.10], [0.10, -0.10], [-0.10, -0.10], [-0.10, 0.10]]"
+        linear_min: -2.0
+        linear_max: 0.05
+        theta_min: -2.5
+        theta_max: 2.5
 
-    observation_sources: ["scan"]
-    scan:
+    observation_sources: ["scan_left", "scan_right", "scan_rear"]
+    scan_left:
       type: "scan"
-      topic: "/scan"
+      topic: "/scan_left_limited"
+      enabled: true
+    scan_right:
+      type: "scan"
+      topic: "/scan_right_limited"
+      enabled: true
+    scan_rear:
+      type: "scan"
+      topic: "/scan_rear_limited"
       enabled: true

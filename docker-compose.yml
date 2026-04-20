@@ -10,16 +10,22 @@ services:
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+      DISPLAY: ${DISPLAY:-:0}
+      QT_X11_NO_MITSHM: "1"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      XAUTHORITY: /tmp/.Xauthority
     volumes:
       - .:/ws
       - colcon_build_jazzy:/ws/build
       - colcon_install_jazzy:/ws/install
       - colcon_log_jazzy:/ws/log
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-/dev/null}:/tmp/.Xauthority:ro
     command: >
       bash -lc "
       colcon build --symlink-install --packages-up-to forklift_demo_description &&
       source /ws/install/setup.bash &&
-      ros2 launch forklift_demo_description sim_followpath.launch.py launch_rviz:=false"
+      ros2 launch forklift_demo_description sim_followpath.launch.py launch_rviz:=false launch_gz_gui:=true"
 
   rviz:
     image: forklift_demo:jazzy
@@ -84,7 +90,7 @@ services:
       until [ -f /ws/install/setup.bash ]; do sleep 1; done &&
       source /ws/install/setup.bash &&
       ros2 run rqt_robot_steering rqt_robot_steering --ros-args
-      -p default_topic:=/cmd_vel
+      -p default_topic:=/cmd_vel_raw
       -p default_vx_min:=-0.85
       -p default_vx_max:=0.85
       -p default_vw_min:=-1.0

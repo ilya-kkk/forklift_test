@@ -8,7 +8,7 @@
     name="base_link">
     <inertial>
       <origin
-        xyz="0.94148 -7.6988E-08 0.92711"
+        xyz="0.94148 -7.6988E-08 0.25"
         rpy="0 0 0" />
       <mass
         value="1000" />
@@ -742,7 +742,7 @@
             <samples>720</samples>
             <resolution>1</resolution>
             <min_angle>-3.14159265359</min_angle>
-            <max_angle>3.14159265359</max_angle>
+            <max_angle>1.57079632679</max_angle>
           </horizontal>
         </scan>
         <range>
@@ -770,7 +770,7 @@
           <horizontal>
             <samples>720</samples>
             <resolution>1</resolution>
-            <min_angle>-3.14159265359</min_angle>
+            <min_angle>-1.57079632679</min_angle>
             <max_angle>3.14159265359</max_angle>
           </horizontal>
         </scan>
@@ -799,8 +799,8 @@
           <horizontal>
             <samples>720</samples>
             <resolution>1</resolution>
-            <min_angle>-3.14159265359</min_angle>
-            <max_angle>3.14159265359</max_angle>
+            <min_angle>-0.78539816339</min_angle>
+            <max_angle>0.78539816339</max_angle>
           </horizontal>
         </scan>
         <range>
@@ -903,20 +903,20 @@
     <preserveFixedJoint>true</preserveFixedJoint>
   </gazebo>
   <gazebo reference="right_wheel_link">
-    <mu1>50.0</mu1>
-    <mu2>50.0</mu2>
+    <mu1>1000.0</mu1>
+    <mu2>1000.0</mu2>
   </gazebo>
   <gazebo reference="left_wheel_link">
-    <mu1>35.0</mu1>
-    <mu2>35.0</mu2>
+    <mu1>1000.0</mu1>
+    <mu2>1000.0</mu2>
   </gazebo>
   <gazebo reference="fork_left_wheel_link">
-    <mu1>25.0</mu1>
-    <mu2>25.0</mu2>
+    <mu1>1000.0</mu1>
+    <mu2>1000.0</mu2>
   </gazebo>
   <gazebo reference="fork_right_wheel_link">
-    <mu1>25.0</mu1>
-    <mu2>25.0</mu2>
+    <mu1>1000.0</mu1>
+    <mu2>1000.0</mu2>
   </gazebo>
   <gazebo>
     <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">

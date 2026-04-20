@@ -36,6 +36,7 @@ class CmdVelToMotors(Node):
     def __init__(self) -> None:
         super().__init__("cmd_vel_to_motors")
 
+        self.declare_parameter("enabled", True)
         self.declare_parameter("robot_description", "")
         self.declare_parameter("cmd_vel_topic", "/cmd_vel")
         self.declare_parameter("steering_cmd_topic", "/forklift/right_steering_cmd")
@@ -48,11 +49,15 @@ class CmdVelToMotors(Node):
         self.declare_parameter("steering_joint_name", "right_steering_joint")
         self.declare_parameter("drive_wheel_joint_name", "right_wheel_joint")
         self.declare_parameter("drive_wheel_radius", 0.0)
+        self.declare_parameter("drive_wheel_velocity_sign", 1.0)
         self.declare_parameter("publish_rate", 30.0)
         self.declare_parameter("command_timeout_sec", 0.25)
         self.declare_parameter("motion_epsilon", 1e-4)
         self.declare_parameter("center_steering_on_stop", False)
 
+        self._enabled = self._parse_bool_parameter(
+            self.get_parameter("enabled").value
+        )
         robot_description = str(self.get_parameter("robot_description").value)
         steering_joint_name = str(self.get_parameter("steering_joint_name").value)
         drive_wheel_joint_name = str(
@@ -60,6 +65,12 @@ class CmdVelToMotors(Node):
         )
         drive_wheel_radius = max(
             0.0, float(self.get_parameter("drive_wheel_radius").value)
+        )
+        drive_wheel_velocity_sign = float(
+            self.get_parameter("drive_wheel_velocity_sign").value
+        )
+        self._drive_wheel_velocity_sign = (
+            -1.0 if drive_wheel_velocity_sign < 0.0 else 1.0
         )
         cmd_vel_frame = str(self.get_parameter("cmd_vel_frame").value)
         cmd_vel_topic = str(self.get_parameter("cmd_vel_topic").value)
@@ -130,7 +141,7 @@ class CmdVelToMotors(Node):
             "base=%s cmd_frame=%s cmd_frame_pose=(%.3f, %.3f, %.3f) "
             "steering_joint=%s drive_joint=%s steering_xy=(%.3f, %.3f) "
             "wheel_radius=%.3f steering_limits=[%.3f, %.3f] wheel_vel_limit=%s "
-            "motion_mode=%s reverse_velocity_scale=%.2f"
+            "wheel_velocity_sign=%.1f motion_mode=%s reverse_velocity_scale=%.2f"
             % (
                 cmd_vel_topic,
                 steering_cmd_topic,
@@ -148,10 +159,16 @@ class CmdVelToMotors(Node):
                 self._kinematic_model.steering_limits[0],
                 self._kinematic_model.steering_limits[1],
                 wheel_velocity_limit_text,
+                self._drive_wheel_velocity_sign,
                 self._motion_mode,
                 self._reverse_velocity_scale,
             )
         )
+        if not self._enabled:
+            self.get_logger().warning(
+                "cmd_vel_to_motors is disabled by parameter 'enabled:=false'; "
+                "node will not publish wheel/steering commands."
+            )
 
     def _cmd_vel_callback(self, message: Twist) -> None:
         self._latest_cmd = message
@@ -166,6 +183,9 @@ class CmdVelToMotors(Node):
         self.get_logger().info("Motion mode switched to %s" % self._motion_mode)
 
     def _publish_motor_commands(self) -> None:
+        if not self._enabled:
+            return
+
         if self._command_is_stale():
             steering_angle = (
                 0.0
@@ -229,6 +249,7 @@ class CmdVelToMotors(Node):
         wheel_angular_velocity = (
             wheel_direction * wheel_linear_speed / self._kinematic_model.wheel_radius
         )
+        wheel_angular_velocity *= self._drive_wheel_velocity_sign
         wheel_velocity_limit = self._kinematic_model.wheel_velocity_limit
         if wheel_velocity_limit is not None:
             wheel_angular_velocity = max(
@@ -559,6 +580,22 @@ class CmdVelToMotors(Node):
         message = Float64()
         message.data = value
         publisher.publish(message)
+
+    def _parse_bool_parameter(self, raw_value) -> bool:
+        if isinstance(raw_value, bool):
+            return raw_value
+        if isinstance(raw_value, (int, float)):
+            return bool(raw_value)
+        if isinstance(raw_value, str):
+            normalized = raw_value.strip().lower()
+            if normalized in ("1", "true", "yes", "on"):
+                return True
+            if normalized in ("0", "false", "no", "off"):
+                return False
+        raise ValueError(
+            "Parameter 'enabled' must be a boolean-compatible value, got: %r"
+            % (raw_value,)
+        )
 
 
 def main(args=None) -> None:

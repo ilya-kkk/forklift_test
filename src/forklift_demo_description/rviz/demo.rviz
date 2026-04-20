@@ -59,54 +59,58 @@ Visualization Manager:
         Value: /scan
       Value: true
     - Class: rviz_default_plugins/LaserScan
-      Color: 255; 170; 0
+      Color: 255; 220; 0
+      Color Transformer: FlatColor
       Enabled: true
       Filter size: 30
       Name: RearLidar
       Size (Pixels): 6
-      Style: Flat Squares
+      Style: Points
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: /scan_raw
+        Value: /scan_rear_limited
       Value: true
     - Class: rviz_default_plugins/LaserScan
-      Color: 0; 170; 255
+      Color: 0; 200; 255
+      Color Transformer: FlatColor
       Enabled: true
       Filter size: 30
       Name: LeftLidar
       Size (Pixels): 6
-      Style: Flat Squares
+      Style: Points
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: /scan_left
+        Value: /scan_left_limited
       Value: true
     - Class: rviz_default_plugins/LaserScan
-      Color: 255; 0; 170
+      Color: 255; 60; 60
+      Color Transformer: FlatColor
       Enabled: true
       Filter size: 30
       Name: RightLidar
       Size (Pixels): 6
-      Style: Flat Squares
+      Style: Points
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: /scan_right
+        Value: /scan_right_limited
       Value: true
     - Class: rviz_default_plugins/LaserScan
-      Color: 80; 255; 120
+      Color: 255; 140; 0
+      Color Transformer: FlatColor
       Enabled: true
       Filter size: 30
       Name: UpLidar
       Size (Pixels): 6
-      Style: Flat Squares
+      Style: Points
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -215,7 +219,7 @@ Visualization Manager:
       Head Length: 0.14
       Length: 0.25
       Line Style: Billboards
-      Line Width: 0.035
+      Line Width: 0.1
       Name: PlannedPath
       Pose Color: 255; 255; 255
       Pose Style: None
@@ -252,7 +256,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /collision_monitor/polygon_stop
+        Value: /collision_monitor/velocity_polygon_stop
       Value: true
     - Alpha: 0.7
       Class: rviz_default_plugins/Polygon
@@ -264,7 +268,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /collision_monitor/polygon_slowdown
+        Value: /collision_monitor/velocity_polygon_slowdown
       Value: true
     - Alpha: 1
       Buffer Length: 2

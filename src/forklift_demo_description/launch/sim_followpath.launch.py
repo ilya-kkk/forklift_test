@@ -14,7 +14,7 @@ from launch.conditions import IfCondition
 from launch.events import matches_action
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import Command, LaunchConfiguration, PythonExpression
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.event_handlers import OnStateTransition
 from launch_ros.events.lifecycle import ChangeState
@@ -28,6 +28,8 @@ def generate_launch_description() -> LaunchDescription:
 
     use_sim_time = LaunchConfiguration("use_sim_time")
     launch_rviz = LaunchConfiguration("launch_rviz")
+    launch_gz_gui = LaunchConfiguration("launch_gz_gui")
+    enable_cmd_vel_to_motors = LaunchConfiguration("enable_cmd_vel_to_motors")
     world = LaunchConfiguration("world")
     x = LaunchConfiguration("x")
     y = LaunchConfiguration("y")
@@ -60,7 +62,18 @@ def generate_launch_description() -> LaunchDescription:
         PythonLaunchDescriptionSource(
             os.path.join(ros_gz_sim_share, "launch", "gz_sim.launch.py")
         ),
-        launch_arguments={"gz_args": ["-r -s --headless-rendering -v 2 ", world]}.items(),
+        launch_arguments={
+            "gz_args": [
+                PythonExpression(
+                    [
+                        "'-r -v 2 ' if '",
+                        launch_gz_gui,
+                        "' == 'true' else '-r -s --headless-rendering -v 2 '",
+                    ]
+                ),
+                world,
+            ]
+        }.items(),
     )
 
     spawn_robot = Node(
@@ -257,13 +270,16 @@ def generate_launch_description() -> LaunchDescription:
             parameters=[
                 {
                     "use_sim_time": use_sim_time,
+                    "enabled": enable_cmd_vel_to_motors,
                     "robot_description": robot_description,
+                    "cmd_vel_topic": "/cmd_vel",
                     "cmd_vel_frame": "base_link",
                     "steering_joint_name": "right_steering_joint",
                     "drive_wheel_joint_name": "right_wheel_joint",
                     "steering_cmd_topic": "/forklift/right_steering_cmd",
                     "wheel_cmd_topic": "/forklift/right_wheel_cmd",
                     "drive_wheel_radius": 0.125,
+                    "drive_wheel_velocity_sign": -1.0,
                 }
             ],
         ),
@@ -299,6 +315,54 @@ def generate_launch_description() -> LaunchDescription:
                     "output_scan_topic": "/scan",
                     "blind_sector_center_deg": 0.0,
                     "blind_sector_half_width_deg": 32.0,
+                }
+            ],
+        ),
+        Node(
+            package="forklift_demo_control",
+            executable="scan_sector_filter",
+            name="scan_left_sector_filter",
+            output="screen",
+            parameters=[
+                {
+                    "use_sim_time": use_sim_time,
+                    "input_scan_topic": "/scan_left",
+                    "output_scan_topic": "/scan_left_limited",
+                    # Keep [-90, 180] by blinding [-180, -90].
+                    "blind_sector_center_deg": -135.0,
+                    "blind_sector_half_width_deg": 45.0,
+                }
+            ],
+        ),
+        Node(
+            package="forklift_demo_control",
+            executable="scan_sector_filter",
+            name="scan_right_sector_filter",
+            output="screen",
+            parameters=[
+                {
+                    "use_sim_time": use_sim_time,
+                    "input_scan_topic": "/scan_right",
+                    "output_scan_topic": "/scan_right_limited",
+                    # Keep [-180, 90] by blinding [90, 180].
+                    "blind_sector_center_deg": 135.0,
+                    "blind_sector_half_width_deg": 45.0,
+                }
+            ],
+        ),
+        Node(
+            package="forklift_demo_control",
+            executable="scan_sector_filter",
+            name="scan_rear_sector_filter",
+            output="screen",
+            parameters=[
+                {
+                    "use_sim_time": use_sim_time,
+                    "input_scan_topic": "/scan_raw",
+                    "output_scan_topic": "/scan_rear_limited",
+                    # Keep [-45, 45] by blinding everything else.
+                    "blind_sector_center_deg": 180.0,
+                    "blind_sector_half_width_deg": 135.0,
                 }
             ],
         ),
@@ -346,6 +410,8 @@ def generate_launch_description() -> LaunchDescription:
         [
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("launch_rviz", default_value="false"),
+            DeclareLaunchArgument("launch_gz_gui", default_value="true"),
+            DeclareLaunchArgument("enable_cmd_vel_to_motors", default_value="true"),
             DeclareLaunchArgument(
                 "world",
                 default_value=os.path.join(pkg_share, "worlds", "square_room.sdf"),
