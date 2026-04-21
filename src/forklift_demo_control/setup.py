@@ -21,11 +21,13 @@ setup(
     entry_points={
         "console_scripts": [
             "cmd_vel_to_motors = forklift_demo_control.cmd_vel_to_motors:main",
+            "cmd_vel_activity_service = forklift_demo_control.cmd_vel_activity_service:main",
             "fork_position_controller = forklift_demo_control.fork_position_controller:main",
             "map_service = forklift_demo_control.map_service:main",
             "route_graph_builder = forklift_demo_control.route_graph_builder:main",
             "route_service = forklift_demo_control.route_service:main",
             "scan_sector_filter = forklift_demo_control.scan_sector_filter:main",
+            "up_lidar_marker_service = forklift_demo_control.up_lidar_marker_service:main",
         ]
     },
 )

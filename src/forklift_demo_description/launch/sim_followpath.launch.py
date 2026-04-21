@@ -375,6 +375,35 @@ def generate_launch_description() -> LaunchDescription:
             parameters=[{"use_sim_time": use_sim_time}],
         ),
         Node(
+            package="forklift_demo_control",
+            executable="up_lidar_marker_service",
+            name="up_lidar_marker_service",
+            output="screen",
+            parameters=[
+                {
+                    "use_sim_time": use_sim_time,
+                    "frame_id": "up_lidar_link",
+                    "marker_topic": "/debug/up_lidar_marker",
+                    "moving_topic": "/debug/up_lidar_marker/is_moving",
+                    "service_name": "/robot_data/marker/up_lidar/control",
+                }
+            ],
+        ),
+        Node(
+            package="forklift_demo_control",
+            executable="cmd_vel_activity_service",
+            name="cmd_vel_activity_service",
+            output="screen",
+            parameters=[
+                {
+                    "use_sim_time": use_sim_time,
+                    "cmd_vel_topic": "/cmd_vel",
+                    "moving_topic": "/debug/up_lidar_marker/is_moving",
+                    "service_name": "/robot_data/marker/cmd_vel_watch/control",
+                }
+            ],
+        ),
+        Node(
             package="rviz2",
             executable="rviz2",
             output="screen",

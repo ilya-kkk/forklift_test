@@ -129,26 +129,26 @@
       </collision>
 
       <collision name="block_1_collision">
-        <pose>-0.46 -0.34 0.061 0 0 0</pose>
+        <pose>-0.46 -0.35 0.061 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.145 0.08 0.078</size>
+            <size>0.145 0.10 0.078</size>
           </box>
         </geometry>
       </collision>
       <collision name="block_2_collision">
-        <pose>0 -0.34 0.061 0 0 0</pose>
+        <pose>0 -0.35 0.061 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.145 0.08 0.078</size>
+            <size>0.145 0.10 0.078</size>
           </box>
         </geometry>
       </collision>
       <collision name="block_3_collision">
-        <pose>0.46 -0.34 0.061 0 0 0</pose>
+        <pose>0.46 -0.35 0.061 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.145 0.08 0.078</size>
+            <size>0.145 0.10 0.078</size>
           </box>
         </geometry>
       </collision>
@@ -177,26 +177,26 @@
         </geometry>
       </collision>
       <collision name="block_7_collision">
-        <pose>-0.46 0.34 0.061 0 0 0</pose>
+        <pose>-0.46 0.35 0.061 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.145 0.08 0.078</size>
+            <size>0.145 0.10 0.078</size>
           </box>
         </geometry>
       </collision>
       <collision name="block_8_collision">
-        <pose>0 0.34 0.061 0 0 0</pose>
+        <pose>0 0.35 0.061 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.145 0.08 0.078</size>
+            <size>0.145 0.10 0.078</size>
           </box>
         </geometry>
       </collision>
       <collision name="block_9_collision">
-        <pose>0.46 0.34 0.061 0 0 0</pose>
+        <pose>0.46 0.35 0.061 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.145 0.08 0.078</size>
+            <size>0.145 0.10 0.078</size>
           </box>
         </geometry>
       </collision>
@@ -308,7 +308,7 @@
       </visual>
 
       <visual name="block_1">
-        <pose>-0.46 -0.27 0.061 0 0 0</pose>
+        <pose>-0.46 -0.35 0.061 0 0 0</pose>
         <geometry>
           <box>
             <size>0.145 0.10 0.078</size>
@@ -320,7 +320,7 @@
         </material>
       </visual>
       <visual name="block_2">
-        <pose>0 -0.27 0.061 0 0 0</pose>
+        <pose>0 -0.35 0.061 0 0 0</pose>
         <geometry>
           <box>
             <size>0.145 0.10 0.078</size>
@@ -332,7 +332,7 @@
         </material>
       </visual>
       <visual name="block_3">
-        <pose>0.46 -0.27 0.061 0 0 0</pose>
+        <pose>0.46 -0.35 0.061 0 0 0</pose>
         <geometry>
           <box>
             <size>0.145 0.10 0.078</size>
@@ -380,7 +380,7 @@
         </material>
       </visual>
       <visual name="block_7">
-        <pose>-0.46 0.27 0.061 0 0 0</pose>
+        <pose>-0.46 0.35 0.061 0 0 0</pose>
         <geometry>
           <box>
             <size>0.145 0.10 0.078</size>
@@ -392,7 +392,7 @@
         </material>
       </visual>
       <visual name="block_8">
-        <pose>0 0.27 0.061 0 0 0</pose>
+        <pose>0 0.35 0.061 0 0 0</pose>
         <geometry>
           <box>
             <size>0.145 0.10 0.078</size>
@@ -404,7 +404,7 @@
         </material>
       </visual>
       <visual name="block_9">
-        <pose>0.46 0.27 0.061 0 0 0</pose>
+        <pose>0.46 0.35 0.061 0 0 0</pose>
         <geometry>
           <box>
             <size>0.145 0.10 0.078</size>
