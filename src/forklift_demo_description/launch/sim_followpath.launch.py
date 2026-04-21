@@ -294,6 +294,7 @@ def generate_launch_description() -> LaunchDescription:
                     "joint_name": "fork_joint",
                     "position_cmd_topic": "/forklift/fork_cmd",
                     "velocity_cmd_topic": "/forklift/fork_velocity_cmd",
+                    "invert_position_command": False,
                     "position_lower_limit": 0.0,
                     "position_upper_limit": 1.0,
                     "max_velocity": 0.35,

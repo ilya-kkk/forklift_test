@@ -62,10 +62,10 @@
       </collision>
 
       <collision name="bottom_board_left_collision">
-        <pose>0 -0.27 0.011 0 0 0</pose>
+        <pose>0 -0.34 0.011 0 0 0</pose>
         <geometry>
           <box>
-            <size>1.2 0.145 0.022</size>
+            <size>1.2 0.10 0.022</size>
           </box>
         </geometry>
         <surface>
@@ -87,7 +87,7 @@
         <pose>0 0 0.011 0 0 0</pose>
         <geometry>
           <box>
-            <size>1.2 0.145 0.022</size>
+            <size>1.2 0.10 0.022</size>
           </box>
         </geometry>
         <surface>
@@ -106,10 +106,10 @@
         </surface>
       </collision>
       <collision name="bottom_board_right_collision">
-        <pose>0 0.27 0.011 0 0 0</pose>
+        <pose>0 0.34 0.011 0 0 0</pose>
         <geometry>
           <box>
-            <size>1.2 0.145 0.022</size>
+            <size>1.2 0.10 0.022</size>
           </box>
         </geometry>
         <surface>
@@ -129,26 +129,26 @@
       </collision>
 
       <collision name="block_1_collision">
-        <pose>-0.46 -0.27 0.061 0 0 0</pose>
+        <pose>-0.46 -0.34 0.061 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.145 0.10 0.078</size>
+            <size>0.145 0.08 0.078</size>
           </box>
         </geometry>
       </collision>
       <collision name="block_2_collision">
-        <pose>0 -0.27 0.061 0 0 0</pose>
+        <pose>0 -0.34 0.061 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.145 0.10 0.078</size>
+            <size>0.145 0.08 0.078</size>
           </box>
         </geometry>
       </collision>
       <collision name="block_3_collision">
-        <pose>0.46 -0.27 0.061 0 0 0</pose>
+        <pose>0.46 -0.34 0.061 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.145 0.10 0.078</size>
+            <size>0.145 0.08 0.078</size>
           </box>
         </geometry>
       </collision>
@@ -177,26 +177,26 @@
         </geometry>
       </collision>
       <collision name="block_7_collision">
-        <pose>-0.46 0.27 0.061 0 0 0</pose>
+        <pose>-0.46 0.34 0.061 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.145 0.10 0.078</size>
+            <size>0.145 0.08 0.078</size>
           </box>
         </geometry>
       </collision>
       <collision name="block_8_collision">
-        <pose>0 0.27 0.061 0 0 0</pose>
+        <pose>0 0.34 0.061 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.145 0.10 0.078</size>
+            <size>0.145 0.08 0.078</size>
           </box>
         </geometry>
       </collision>
       <collision name="block_9_collision">
-        <pose>0.46 0.27 0.061 0 0 0</pose>
+        <pose>0.46 0.34 0.061 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.145 0.10 0.078</size>
+            <size>0.145 0.08 0.078</size>
           </box>
         </geometry>
       </collision>

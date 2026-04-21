@@ -13,7 +13,7 @@ route_server:
     max_iterations: 0
     max_planning_time: 2.0
     smooth_corners: false
-    smoothing_radius: 0.0
+    smoothing_radius: 0.5
     prune_goal: true
     min_prune_dist_from_start: 0.1
     min_prune_dist_from_goal: 0.15

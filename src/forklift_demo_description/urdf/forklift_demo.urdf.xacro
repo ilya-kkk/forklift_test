@@ -432,6 +432,15 @@
           rgba="0.79216 0.81961 0.93333 1" />
       </material>
     </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://forklift_demo_description/urdf/meshes/fork_link.STL" />
+      </geometry>
+    </collision>
   </link>
   <joint
     name="fork_joint"
@@ -444,7 +453,7 @@
     <child
       link="fork_link" />
     <axis
-      xyz="0 0 -1" />
+      xyz="0 0 1" />
     <limit
       lower="0"
       upper="1"

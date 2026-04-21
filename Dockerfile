@@ -22,6 +22,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
             ros-jazzy-navigation2 \
             ros-jazzy-rmw-cyclonedds-cpp \
             ros-jazzy-rqt-robot-steering \
+            ros-jazzy-slider-publisher \
             ros-jazzy-robot-state-publisher \
             ros-jazzy-ros-gz \
             ros-jazzy-rviz2 \
