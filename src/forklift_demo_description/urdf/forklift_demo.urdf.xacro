@@ -679,7 +679,7 @@
     <limit
       lower="-3.1416"
       upper="3.1416"
-      effort="2500"
+      effort="1000000000"
       velocity="6.0" />
   </joint>
   <link
@@ -717,8 +717,7 @@
         xyz="0 0 0"
         rpy="0 0 0" />
       <geometry>
-        <mesh
-          filename="package://forklift_demo_description/urdf/meshes/right_wheel_link.STL" />
+        <cylinder radius="0.1" length="0.01" />
       </geometry>
     </collision>
   </link>
@@ -954,8 +953,6 @@
       <d_gain>12</d_gain>
       <i_max>5</i_max>
       <i_min>-5</i_min>
-      <cmd_max>120</cmd_max>
-      <cmd_min>-120</cmd_min>
     </plugin>
     <plugin filename="gz-sim-joint-controller-system" name="gz::sim::systems::JointController">
       <joint_name>fork_joint</joint_name>

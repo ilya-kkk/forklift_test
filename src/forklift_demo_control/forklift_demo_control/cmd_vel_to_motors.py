@@ -7,6 +7,7 @@ import rclpy
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64, String
 
 
@@ -54,6 +55,12 @@ class CmdVelToMotors(Node):
         self.declare_parameter("command_timeout_sec", 0.25)
         self.declare_parameter("motion_epsilon", 1e-4)
         self.declare_parameter("center_steering_on_stop", False)
+        self.declare_parameter("joint_states_topic", "/joint_states")
+        self.declare_parameter("require_steering_alignment", True)
+        self.declare_parameter(
+            "steering_alignment_tolerance_rad", math.radians(3.0)
+        )
+        self.declare_parameter("steering_state_timeout_sec", 0.3)
 
         self._enabled = self._parse_bool_parameter(
             self.get_parameter("enabled").value
@@ -90,6 +97,16 @@ class CmdVelToMotors(Node):
         self._motion_epsilon = max(
             1e-6, float(self.get_parameter("motion_epsilon").value)
         )
+        self._joint_states_topic = str(self.get_parameter("joint_states_topic").value)
+        self._require_steering_alignment = bool(
+            self.get_parameter("require_steering_alignment").value
+        )
+        self._steering_alignment_tolerance_rad = max(
+            1e-4, float(self.get_parameter("steering_alignment_tolerance_rad").value)
+        )
+        self._steering_state_timeout_sec = max(
+            0.0, float(self.get_parameter("steering_state_timeout_sec").value)
+        )
         self._center_steering_on_stop = bool(
             self.get_parameter("center_steering_on_stop").value
         )
@@ -108,6 +125,10 @@ class CmdVelToMotors(Node):
         self._latest_cmd = Twist()
         self._last_cmd_time = None
         self._last_steering_angle = 0.0
+        self._last_wheel_velocity_cmd = 0.0
+        self._current_steering_angle = None
+        self._last_steering_state_time = None
+        self._last_alignment_wait_log_time = None
 
         self._steering_publisher = self.create_publisher(
             Float64, steering_cmd_topic, 10
@@ -120,6 +141,9 @@ class CmdVelToMotors(Node):
         )
         self._cmd_vel_subscription = self.create_subscription(
             Twist, cmd_vel_topic, self._cmd_vel_callback, 10
+        )
+        self._joint_states_subscription = self.create_subscription(
+            JointState, self._joint_states_topic, self._joint_state_callback, 10
         )
         self._motion_mode_subscription = self.create_subscription(
             String, motion_mode_topic, self._motion_mode_callback, motion_mode_qos
@@ -141,7 +165,8 @@ class CmdVelToMotors(Node):
             "base=%s cmd_frame=%s cmd_frame_pose=(%.3f, %.3f, %.3f) "
             "steering_joint=%s drive_joint=%s steering_xy=(%.3f, %.3f) "
             "wheel_radius=%.3f steering_limits=[%.3f, %.3f] wheel_vel_limit=%s "
-            "wheel_velocity_sign=%.1f motion_mode=%s reverse_velocity_scale=%.2f"
+            "wheel_velocity_sign=%.1f motion_mode=%s reverse_velocity_scale=%.2f "
+            "require_steering_alignment=%s steering_tol=%.4f rad"
             % (
                 cmd_vel_topic,
                 steering_cmd_topic,
@@ -162,6 +187,8 @@ class CmdVelToMotors(Node):
                 self._drive_wheel_velocity_sign,
                 self._motion_mode,
                 self._reverse_velocity_scale,
+                str(self._require_steering_alignment).lower(),
+                self._steering_alignment_tolerance_rad,
             )
         )
         if not self._enabled:
@@ -182,6 +209,16 @@ class CmdVelToMotors(Node):
         self._motion_mode = next_mode
         self.get_logger().info("Motion mode switched to %s" % self._motion_mode)
 
+    def _joint_state_callback(self, message: JointState) -> None:
+        for index, joint_name in enumerate(message.name):
+            if joint_name != self._kinematic_model.steering_joint_name:
+                continue
+            if index >= len(message.position):
+                return
+            self._current_steering_angle = float(message.position[index])
+            self._last_steering_state_time = self.get_clock().now()
+            return
+
     def _publish_motor_commands(self) -> None:
         if not self._enabled:
             return
@@ -197,10 +234,57 @@ class CmdVelToMotors(Node):
             steering_angle, wheel_velocity = self._twist_to_motor_command(
                 self._latest_cmd
             )
+            wheel_velocity = self._gate_wheel_start_until_aligned(
+                target_steering_angle=steering_angle,
+                requested_wheel_velocity=wheel_velocity,
+            )
 
         self._last_steering_angle = steering_angle
         self._publish_float64(self._steering_publisher, steering_angle)
         self._publish_float64(self._wheel_publisher, wheel_velocity)
+        self._last_wheel_velocity_cmd = wheel_velocity
+
+    def _gate_wheel_start_until_aligned(
+        self, *, target_steering_angle: float, requested_wheel_velocity: float
+    ) -> float:
+        if abs(requested_wheel_velocity) <= self._motion_epsilon:
+            return 0.0
+        if not self._require_steering_alignment:
+            return requested_wheel_velocity
+        # Enforce steering alignment only when starting wheel rotation from zero.
+        if abs(self._last_wheel_velocity_cmd) > self._motion_epsilon:
+            return requested_wheel_velocity
+        if self._current_steering_angle is None:
+            self._log_alignment_wait("waiting for first steering state")
+            return 0.0
+        if self._steering_state_timeout_sec > 0.0 and self._last_steering_state_time is not None:
+            age_sec = (
+                self.get_clock().now() - self._last_steering_state_time
+            ).nanoseconds / 1_000_000_000.0
+            if age_sec > self._steering_state_timeout_sec:
+                self._log_alignment_wait(
+                    "steering state is stale (age=%.3fs)" % age_sec
+                )
+                return 0.0
+
+        steering_error = normalize_angle(
+            target_steering_angle - self._current_steering_angle
+        )
+        if abs(steering_error) > self._steering_alignment_tolerance_rad:
+            self._log_alignment_wait("steering error %.4f rad" % steering_error)
+            return 0.0
+        return requested_wheel_velocity
+
+    def _log_alignment_wait(self, reason: str) -> None:
+        now = self.get_clock().now()
+        if self._last_alignment_wait_log_time is not None:
+            dt = (now - self._last_alignment_wait_log_time).nanoseconds / 1_000_000_000.0
+            if dt < 1.0:
+                return
+        self._last_alignment_wait_log_time = now
+        self.get_logger().info(
+            "Wheel command gated until steering is aligned: %s" % reason
+        )
 
     def _command_is_stale(self) -> bool:
         if self._last_cmd_time is None:

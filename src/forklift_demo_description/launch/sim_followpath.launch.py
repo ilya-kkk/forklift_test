@@ -397,7 +397,7 @@ def generate_launch_description() -> LaunchDescription:
             parameters=[
                 {
                     "use_sim_time": use_sim_time,
-                    "cmd_vel_topic": "/cmd_vel",
+                    "wheel_velocity_topic": "/forklift/right_wheel_cmd",
                     "moving_topic": "/debug/up_lidar_marker/is_moving",
                     "service_name": "/robot_data/marker/cmd_vel_watch/control",
                 }
