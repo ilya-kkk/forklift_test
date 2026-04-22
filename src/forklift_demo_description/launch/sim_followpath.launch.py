@@ -403,13 +403,18 @@ def generate_launch_description() -> LaunchDescription:
                 }
             ],
         ),
-        Node(
-            package="rviz2",
-            executable="rviz2",
-            output="screen",
-            arguments=["-d", rviz_config],
-            parameters=[{"use_sim_time": use_sim_time}],
-            condition=IfCondition(launch_rviz),
+        TimerAction(
+            period=3.0,
+            actions=[
+                Node(
+                    package="rviz2",
+                    executable="rviz2",
+                    output="screen",
+                    arguments=["-d", rviz_config],
+                    parameters=[{"use_sim_time": use_sim_time}],
+                    condition=IfCondition(launch_rviz),
+                )
+            ],
         ),
     ]
 

@@ -8,7 +8,7 @@
     name="base_link">
     <inertial>
       <origin
-        xyz="0.94148 -7.6988E-08 0.25"
+        xyz="0.94148 -7.6988E-08 0.10"
         rpy="0 0 0" />
       <mass
         value="1000" />
@@ -888,6 +888,7 @@
       <update_rate>10</update_rate>
       <visualize>false</visualize>
       <topic>camera</topic>
+      <gz_frame_id>camera_link</gz_frame_id>
       <camera>
         <horizontal_fov>1.047</horizontal_fov>
         <image>
@@ -920,20 +921,28 @@
     <preserveFixedJoint>true</preserveFixedJoint>
   </gazebo>
   <gazebo reference="right_wheel_link">
-    <mu1>1000.0</mu1>
-    <mu2>1000.0</mu2>
+    <mu1>20.0</mu1>
+    <mu2>20.0</mu2>
+    <slip1>0.03</slip1>
+    <slip2>0.03</slip2>
   </gazebo>
   <gazebo reference="left_wheel_link">
-    <mu1>1000.0</mu1>
-    <mu2>1000.0</mu2>
+    <mu1>20.0</mu1>
+    <mu2>20.0</mu2>
+    <slip1>0.03</slip1>
+    <slip2>0.03</slip2>
   </gazebo>
   <gazebo reference="fork_left_wheel_link">
-    <mu1>1000.0</mu1>
-    <mu2>1000.0</mu2>
+    <mu1>20.0</mu1>
+    <mu2>20.0</mu2>
+    <slip1>0.03</slip1>
+    <slip2>0.03</slip2>
   </gazebo>
   <gazebo reference="fork_right_wheel_link">
-    <mu1>1000.0</mu1>
-    <mu2>1000.0</mu2>
+    <mu1>20.0</mu1>
+    <mu2>20.0</mu2>
+    <slip1>0.03</slip1>
+    <slip2>0.03</slip2>
   </gazebo>
   <gazebo>
     <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">
