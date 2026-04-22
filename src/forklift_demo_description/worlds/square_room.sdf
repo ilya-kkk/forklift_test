@@ -42,14 +42,14 @@
           <surface>
             <friction>
               <ode>
-                <mu>20.0</mu>
-                <mu2>20.0</mu2>
-                <slip1>0.03</slip1>
-                <slip2>0.03</slip2>
+                <mu>200.0</mu>
+                <mu2>200.0</mu2>
+                <slip1>0.0</slip1>
+                <slip2>0.0</slip2>
               </ode>
               <bullet>
-                <friction>20.0</friction>
-                <friction2>20.0</friction2>
+                <friction>200.0</friction>
+                <friction2>200.0</friction2>
               </bullet>
             </friction>
           </surface>
