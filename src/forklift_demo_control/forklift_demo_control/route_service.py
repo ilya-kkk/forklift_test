@@ -1,12 +1,14 @@
+import heapq
 import json
 import math
 import threading
-from typing import Any, Dict, Optional
+import time
+from typing import Any, Dict, List, Optional, Tuple
 
 import rclpy
 from action_msgs.msg import GoalStatus
-from builtin_interfaces.msg import Duration
-from nav2_msgs.action import BackUp, ComputeRoute, FollowPath, Spin
+from geometry_msgs.msg import PoseStamped, Twist
+from nav2_msgs.action import FollowPath
 from nav_msgs.msg import Path
 from rclpy.action import ActionClient
 from rclpy.duration import Duration as RclpyDuration
@@ -16,7 +18,12 @@ from rclpy.time import Time
 from ros2_templates.srv import StringWithJson
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from forklift_demo_control.route_graph import index_points, resolve_point
+
+MapData = Dict[str, Any]
+Point = Dict[str, Any]
+Adjacency = Dict[int, List[Tuple[int, float]]]
+RobotPose = Tuple[float, float, float]
+PathPoint = Tuple[float, float]
 
 
 class RouteServiceNode(Node):
@@ -25,112 +32,92 @@ class RouteServiceNode(Node):
 
         self.declare_parameter("map_service_name", "/robot_data/map/get_map")
         self.declare_parameter("route_service_name", "/robot_data/route/go_to_point")
-        self.declare_parameter("compute_route_action_name", "compute_route")
+        self.declare_parameter("move_to_service_name", "/forklift_nav/move_to")
         self.declare_parameter("follow_path_action_name", "follow_path")
-        self.declare_parameter("backup_action_name", "backup")
-        self.declare_parameter("spin_action_name", "spin")
         self.declare_parameter("path_topic", "/route_path")
+        self.declare_parameter("frame_id", "map")
+        self.declare_parameter("robot_base_frame", "base_link")
         self.declare_parameter("controller_id", "FollowPath")
         self.declare_parameter("goal_checker_id", "goal_checker")
-        self.declare_parameter("compute_timeout_sec", 10.0)
         self.declare_parameter("follow_timeout_sec", 120.0)
-        self.declare_parameter("backup_timeout_sec", 30.0)
-        self.declare_parameter("reverse_entry_spin_timeout_sec", 20.0)
-        self.declare_parameter("reverse_entry_yaw_tolerance", 0.05)
-        self.declare_parameter("reverse_entry_enabled", True)
-        self.declare_parameter("reverse_entry_speed", 0.10)
-        self.declare_parameter("reverse_entry_min_distance", 0.05)
-        self.declare_parameter("graph_filepath", "/tmp/forklift_demo_route_graph.geojson")
-        self.declare_parameter("robot_base_frame", "base_link")
+        self.declare_parameter("nearest_point_tolerance", 0.20)
+        self.declare_parameter("transform_timeout_sec", 1.0)
+        self.declare_parameter("cmd_vel_topic", "/cmd_vel_raw")
+        self.declare_parameter("yaw_tolerance", 0.05)
+        self.declare_parameter("yaw_angular_speed", 0.35)
+        self.declare_parameter("yaw_timeout_sec", 20.0)
+        self.declare_parameter("yaw_control_frequency", 20.0)
 
         self._map_service_name = str(self.get_parameter("map_service_name").value)
         route_service_name = str(self.get_parameter("route_service_name").value)
-        compute_route_action_name = str(
-            self.get_parameter("compute_route_action_name").value
-        )
+        move_to_service_name = str(self.get_parameter("move_to_service_name").value)
         follow_path_action_name = str(
             self.get_parameter("follow_path_action_name").value
         )
-        backup_action_name = str(self.get_parameter("backup_action_name").value)
-        spin_action_name = str(self.get_parameter("spin_action_name").value)
         path_topic = str(self.get_parameter("path_topic").value)
+        cmd_vel_topic = str(self.get_parameter("cmd_vel_topic").value)
+        self._frame_id = str(self.get_parameter("frame_id").value)
+        self._robot_base_frame = str(self.get_parameter("robot_base_frame").value)
         self._controller_id = str(self.get_parameter("controller_id").value)
         self._goal_checker_id = str(self.get_parameter("goal_checker_id").value)
-        self._compute_timeout_sec = max(
-            0.0, float(self.get_parameter("compute_timeout_sec").value)
-        )
         self._follow_timeout_sec = max(
             0.0, float(self.get_parameter("follow_timeout_sec").value)
         )
-        self._backup_timeout_sec = max(
-            0.0, float(self.get_parameter("backup_timeout_sec").value)
+        self._nearest_point_tolerance = max(
+            0.0, float(self.get_parameter("nearest_point_tolerance").value)
         )
-        self._reverse_entry_spin_timeout_sec = max(
-            0.0, float(self.get_parameter("reverse_entry_spin_timeout_sec").value)
+        self._transform_timeout_sec = max(
+            0.0, float(self.get_parameter("transform_timeout_sec").value)
         )
-        self._reverse_entry_yaw_tolerance = max(
-            0.0, float(self.get_parameter("reverse_entry_yaw_tolerance").value)
+        self._yaw_tolerance = max(0.0, float(self.get_parameter("yaw_tolerance").value))
+        self._yaw_angular_speed = max(
+            0.01, float(self.get_parameter("yaw_angular_speed").value)
         )
-        self._reverse_entry_enabled = bool(
-            self.get_parameter("reverse_entry_enabled").value
+        self._yaw_timeout_sec = max(
+            0.0, float(self.get_parameter("yaw_timeout_sec").value)
         )
-        self._reverse_entry_speed = max(
-            0.01, float(self.get_parameter("reverse_entry_speed").value)
+        self._yaw_control_frequency = max(
+            1.0, float(self.get_parameter("yaw_control_frequency").value)
         )
-        self._reverse_entry_min_distance = max(
-            0.0, float(self.get_parameter("reverse_entry_min_distance").value)
-        )
-        self._graph_filepath = str(self.get_parameter("graph_filepath").value)
-        self._robot_base_frame = str(self.get_parameter("robot_base_frame").value)
 
-        qos = QoSProfile(
+        path_qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
-        self._path_publisher = self.create_publisher(Path, path_topic, qos)
+        self._path_publisher = self.create_publisher(Path, path_topic, path_qos)
+        self._cmd_vel_publisher = self.create_publisher(Twist, cmd_vel_topic, 10)
         self._map_client = self.create_client(StringWithJson, self._map_service_name)
-        self._compute_route_client = ActionClient(
-            self, ComputeRoute, compute_route_action_name
-        )
         self._follow_path_client = ActionClient(self, FollowPath, follow_path_action_name)
-        self._backup_client = ActionClient(self, BackUp, backup_action_name)
-        self._spin_client = ActionClient(self, Spin, spin_action_name)
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
+
         self.create_service(
             StringWithJson, route_service_name, self._handle_route_request
+        )
+        self.create_service(
+            StringWithJson, move_to_service_name, self._handle_move_to_request
         )
 
         self._lock = threading.Lock()
         self._active_request: Optional[Dict[str, Any]] = None
 
         self.get_logger().info(
-            "Route service ready: route=%s map=%s compute_route=%s follow_path=%s "
-            "backup=%s spin=%s path_topic=%s reverse_entry=%s"
+            "Route service ready: route=%s move_to=%s map=%s follow_path=%s "
+            "path_topic=%s cmd_vel=%s json_graph=true"
             % (
                 route_service_name,
+                move_to_service_name,
                 self._map_service_name,
-                compute_route_action_name,
                 follow_path_action_name,
-                backup_action_name,
-                spin_action_name,
                 path_topic,
-                str(self._reverse_entry_enabled).lower(),
+                cmd_vel_topic,
             )
         )
 
     def _handle_route_request(self, request, response):
         try:
-            payload = json.loads(request.message or "{}")
-        except json.JSONDecodeError as exc:
-            response.success = False
-            response.message = json.dumps(
-                {"error": "invalid_json", "details": str(exc)}, ensure_ascii=False
-            )
-            return response
-
-        try:
+            payload = self._decode_json_payload(request.message or "{}")
             pending_request = self._normalize_route_request(payload)
         except ValueError as exc:
             response.success = False
@@ -139,6 +126,22 @@ class RouteServiceNode(Node):
             )
             return response
 
+        return self._accept_request(pending_request, response)
+
+    def _handle_move_to_request(self, request, response):
+        try:
+            payload = self._decode_move_to_payload(request.message or "{}")
+            pending_request = self._normalize_move_to_request(payload)
+        except ValueError as exc:
+            response.success = False
+            response.message = json.dumps(
+                {"error": "invalid_request", "details": str(exc)}, ensure_ascii=False
+            )
+            return response
+
+        return self._accept_request(pending_request, response)
+
+    def _accept_request(self, pending_request: Dict[str, Any], response):
         with self._lock:
             if self._active_request is not None:
                 response.success = False
@@ -163,14 +166,33 @@ class RouteServiceNode(Node):
         response.message = json.dumps(
             {
                 "accepted": True,
-                "start": pending_request["start_value"],
+                "mode": pending_request["mode"],
                 "goal": pending_request["goal_value"],
-                "arrival_mode": pending_request["arrival_mode"],
-                "note": "route accepted; pallet/reverse-entry goals split the final edge into Spin + BackUp",
+                "planner": "json_map_dijkstra",
+                "controller": self._controller_id,
             },
             ensure_ascii=False,
         )
         return response
+
+    def _decode_json_payload(self, message: str) -> Dict[str, Any]:
+        try:
+            payload = json.loads(message or "{}")
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid JSON: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("request message must be a JSON object")
+        return payload
+
+    def _decode_move_to_payload(self, message: str) -> Dict[str, Any]:
+        try:
+            payload = json.loads(message or "{}")
+        except json.JSONDecodeError:
+            payload = str(message).strip()
+
+        if isinstance(payload, dict):
+            return payload
+        return {"goal": payload}
 
     def _normalize_route_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         start_value = self._extract_required_value(
@@ -183,14 +205,74 @@ class RouteServiceNode(Node):
             ("goal", "goal_point", "target", "target_point", "to", "to_point"),
             "goal",
         )
-        arrival_mode = self._normalize_arrival_mode(payload.get("arrival_mode", "rear"))
         return {
+            "mode": "route",
             "start_value": start_value,
             "goal_value": goal_value,
-            "arrival_mode": arrival_mode,
         }
 
+    def _normalize_move_to_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        goal_value = self._extract_required_value(
+            payload,
+            ("id", "point_id", "goal", "goal_point", "target", "target_point", "to"),
+            "id",
+        )
+        return {
+            "mode": "move_to",
+            "goal_value": goal_value,
+        }
+
+    def _execute_route_request(self, pending_request: Dict[str, Any]) -> None:
+        try:
+            resolved_request = self._resolve_route_request(pending_request)
+            self._run_route_request(resolved_request)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            self.get_logger().error("Route execution failed: %s" % exc)
+        finally:
+            with self._lock:
+                self._active_request = None
+
     def _resolve_route_request(self, pending_request: Dict[str, Any]) -> Dict[str, Any]:
+        map_data = self._load_map_data()
+        points_by_id, points_by_alias = self._index_points(map_data)
+        adjacency = self._build_adjacency(map_data, points_by_id)
+        goal_point = self._resolve_point(
+            pending_request["goal_value"], points_by_id, points_by_alias
+        )
+
+        initial_pose = None
+        nearest_distance = None
+        if pending_request["mode"] == "move_to":
+            current_pose = self._lookup_robot_pose()
+            start_point, nearest_distance = self._nearest_point(
+                current_pose, points_by_id
+            )
+            if nearest_distance > self._nearest_point_tolerance:
+                initial_pose = current_pose
+        else:
+            start_point = self._resolve_point(
+                pending_request["start_value"], points_by_id, points_by_alias
+            )
+
+        route_point_ids = self._shortest_path(
+            int(start_point["point_id"]),
+            int(goal_point["point_id"]),
+            adjacency,
+        )
+        path = self._build_path(route_point_ids, points_by_id, initial_pose)
+
+        return {
+            "mode": pending_request["mode"],
+            "path": path,
+            "route_point_ids": route_point_ids,
+            "start_point": start_point,
+            "goal_point": goal_point,
+            "nearest_distance": nearest_distance,
+            "used_initial_pose": initial_pose is not None,
+            "goal_yaw": self._goal_yaw(goal_point),
+        }
+
+    def _load_map_data(self) -> MapData:
         if not self._map_client.wait_for_service(timeout_sec=5.0):
             raise ValueError("map service is not available")
 
@@ -205,190 +287,36 @@ class RouteServiceNode(Node):
             raise ValueError("map service returned an error")
 
         try:
-            map_data = json.loads(map_response.message or "{}")
+            return json.loads(map_response.message or "{}")
         except json.JSONDecodeError as exc:
             raise ValueError(f"map service returned invalid JSON: {exc}") from exc
 
-        points_by_id, points_by_alias = index_points(map_data)
-        start_point = resolve_point(
-            pending_request["start_value"], points_by_id, points_by_alias
-        )
-        goal_point = resolve_point(
-            pending_request["goal_value"], points_by_id, points_by_alias
-        )
-        reverse_entry_point_ids = self._collect_reverse_entry_point_ids(map_data)
-        return {
-            "start_point_id": int(start_point["point_id"]),
-            "start_alias": str(start_point["alias"]),
-            "goal_point_id": int(goal_point["point_id"]),
-            "goal_alias": str(goal_point["alias"]),
-            "arrival_mode": pending_request["arrival_mode"],
-            "goal_requires_reverse_entry": int(goal_point["point_id"])
-            in reverse_entry_point_ids,
-        }
-
-    def _collect_reverse_entry_point_ids(self, map_data: Dict[str, Any]) -> set[int]:
-        point_ids = {
-            int(point["point_id"])
-            for point in map_data.get("point", [])
-            if "point_id" in point and self._point_requires_reverse_entry(point)
-        }
-        point_ids.update(self._collect_reverse_entry_point_ids_from_graph())
-        return point_ids
-
-    def _collect_reverse_entry_point_ids_from_graph(self) -> set[int]:
-        if not self._graph_filepath:
-            return set()
-        try:
-            with open(self._graph_filepath, "r", encoding="utf-8") as graph_file:
-                graph = json.load(graph_file)
-        except FileNotFoundError:
-            return set()
-        except (OSError, json.JSONDecodeError) as exc:
-            self.get_logger().warning(
-                "Failed to read route graph metadata from %s: %s"
-                % (self._graph_filepath, exc)
-            )
-            return set()
-
-        point_ids = set()
-        for feature in graph.get("features", []):
-            if feature.get("geometry", {}).get("type") != "Point":
-                continue
-            properties = feature.get("properties", {})
-            metadata = properties.get("metadata", {})
-            if self._point_requires_reverse_entry(properties) or (
-                isinstance(metadata, dict)
-                and self._point_requires_reverse_entry(metadata)
-            ):
-                try:
-                    point_ids.add(int(properties["id"]))
-                except (KeyError, TypeError, ValueError):
-                    continue
-        return point_ids
-
-    def _point_requires_reverse_entry(self, point: Dict[str, Any]) -> bool:
-        for key in (
-            "reverse_entry",
-            "reverse_final_edge",
-            "pallet",
-            "has_pallet",
-            "pallet_present",
-            "contains_pallet",
-            "occupied_by_pallet",
-        ):
-            if key in point and self._is_truthy(point[key]):
-                return True
-
-        metadata = point.get("metadata")
-        if isinstance(metadata, dict):
-            return self._point_requires_reverse_entry(metadata)
-        return False
-
-    def _is_truthy(self, value: Any) -> bool:
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, (int, float)):
-            return value != 0
-        if isinstance(value, str):
-            return value.strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "y",
-                "on",
-                "pallet",
-                "occupied",
-            }
-        return False
-
-    def _execute_route_request(self, pending_request: Dict[str, Any]) -> None:
-        try:
-            resolved_request = self._resolve_route_request(pending_request)
-            self._run_route_request(resolved_request)
-        except Exception as exc:  # pragma: no cover - defensive logging
-            self.get_logger().error("Route execution failed: %s" % exc)
-        finally:
-            with self._lock:
-                self._active_request = None
-
     def _run_route_request(self, resolved_request: Dict[str, Any]) -> None:
-        if not self._compute_route_client.wait_for_server(timeout_sec=5.0):
-            self.get_logger().error("Route Server action is not available")
-            return
-
         if not self._follow_path_client.wait_for_server(timeout_sec=5.0):
             self.get_logger().error("FollowPath action is not available")
             return
 
-        if (
-            self._reverse_entry_enabled
-            and resolved_request["goal_requires_reverse_entry"]
-        ):
-            if not self._spin_client.wait_for_server(timeout_sec=5.0):
-                self.get_logger().error("Spin action is not available")
-                return
-            if not self._backup_client.wait_for_server(timeout_sec=5.0):
-                self.get_logger().error("BackUp action is not available")
-                return
-
-        compute_goal = ComputeRoute.Goal()
-        compute_goal.start_id = resolved_request["start_point_id"]
-        compute_goal.goal_id = resolved_request["goal_point_id"]
-        compute_goal.use_start = True
-        compute_goal.use_poses = False
-
-        self.get_logger().info(
-            "Computing route from %s (%d) to %s (%d)"
-            % (
-                resolved_request["start_alias"],
-                resolved_request["start_point_id"],
-                resolved_request["goal_alias"],
-                resolved_request["goal_point_id"],
-            )
-        )
-        if (
-            self._reverse_entry_enabled
-            and resolved_request["goal_requires_reverse_entry"]
-        ):
-            self.get_logger().info(
-                "Goal %s (%d) is marked for reverse entry; final route edge will use BackUp"
-                % (
-                    resolved_request["goal_alias"],
-                    resolved_request["goal_point_id"],
-                )
-            )
-        compute_result = self._send_action_goal_and_wait(
-            self._compute_route_client,
-            compute_goal,
-            timeout_sec=self._compute_timeout_sec,
-        )
-        if compute_result is None:
-            self.get_logger().error("ComputeRoute action failed or timed out")
-            return
-
-        path = compute_result.path
-        if not path.poses:
-            self.get_logger().error("Route Server returned an empty path")
-            return
+        path = resolved_request["path"]
+        start_point = resolved_request["start_point"]
+        goal_point = resolved_request["goal_point"]
+        goal_yaw = resolved_request["goal_yaw"]
 
         self._path_publisher.publish(path)
-        self.get_logger().info(
-            "Route Server returned %d path poses and %d route nodes"
-            % (len(path.poses), len(compute_result.route.nodes))
-        )
+        self._log_route(resolved_request, path)
 
-        if (
-            self._reverse_entry_enabled
-            and resolved_request["goal_requires_reverse_entry"]
-        ):
-            if not self._run_reverse_entry_route(path, compute_result.route):
-                self.get_logger().error("Reverse-entry route execution failed")
+        if len(path.poses) > 1:
+            if not self._follow_path(path):
                 return
-        elif not self._follow_path(path):
+        else:
+            self.get_logger().info("Route execution skipped: already at drive goal")
+
+        if goal_yaw is not None and not self._rotate_to_yaw(goal_yaw):
             return
 
-        self.get_logger().info("Route execution finished successfully")
+        self.get_logger().info(
+            "Route execution finished successfully at %s (%d)"
+            % (goal_point["alias"], int(goal_point["point_id"]))
+        )
 
     def _follow_path(self, path: Path) -> bool:
         follow_goal = FollowPath.Goal()
@@ -405,140 +333,332 @@ class RouteServiceNode(Node):
             return False
         return True
 
-    def _run_reverse_entry_route(self, path: Path, route) -> bool:
-        final_edge_distance = self._final_route_edge_distance(route)
-        if final_edge_distance is None:
-            self.get_logger().error("Reverse-entry requested but route has no final edge")
-            return False
-        if final_edge_distance < self._reverse_entry_min_distance:
-            self.get_logger().info(
-                "Skipping reverse entry: final edge %.3fm is shorter than %.3fm"
-                % (final_edge_distance, self._reverse_entry_min_distance)
-            )
-            return self._follow_path(path)
+    def _log_route(self, resolved_request: Dict[str, Any], path: Path) -> None:
+        start_point = resolved_request["start_point"]
+        goal_point = resolved_request["goal_point"]
+        mode = resolved_request["mode"]
 
-        prefix_path = self._path_before_final_edge(path, route)
-        if prefix_path is not None and len(prefix_path.poses) >= 2:
-            self.get_logger().info(
-                "Following route prefix (%d poses), then backing up %.3fm into pallet point"
-                % (len(prefix_path.poses), final_edge_distance)
-            )
-            if not self._follow_path(prefix_path):
-                return False
-        else:
-            self.get_logger().info(
-                "No route prefix before pallet entry; backing up %.3fm from current pose"
-                % final_edge_distance
-            )
-
-        if not self._align_for_reverse_entry(route):
-            return False
-
-        backup_goal = BackUp.Goal()
-        backup_goal.target.x = float(final_edge_distance)
-        backup_goal.target.y = 0.0
-        backup_goal.target.z = 0.0
-        backup_goal.speed = float(self._reverse_entry_speed)
-        backup_goal.time_allowance = self._duration_from_seconds(
-            self._backup_timeout_sec
-        )
-        backup_result = self._send_action_goal_and_wait(
-            self._backup_client,
-            backup_goal,
-            timeout_sec=self._backup_timeout_sec,
-        )
-        if backup_result is None:
-            self.get_logger().error("BackUp action failed or timed out")
-            return False
-        if getattr(backup_result, "error_code", 0) != BackUp.Result.NONE:
-            self.get_logger().error(
-                "BackUp action returned error %s: %s"
-                % (
-                    getattr(backup_result, "error_code", "<unknown>"),
-                    getattr(backup_result, "error_msg", ""),
+        if mode == "move_to":
+            nearest_distance = float(resolved_request["nearest_distance"])
+            if resolved_request["used_initial_pose"]:
+                self.get_logger().info(
+                    "MoveTo snapped current pose to nearest JSON point %s (%d), distance=%.3fm"
+                    % (
+                        start_point["alias"],
+                        int(start_point["point_id"]),
+                        nearest_distance,
+                    )
                 )
-            )
-            return False
-        return True
-
-    def _align_for_reverse_entry(self, route) -> bool:
-        desired_yaw = self._reverse_entry_yaw(route)
-        if desired_yaw is None:
-            self.get_logger().error("Cannot compute reverse-entry yaw without final edge")
-            return False
-
-        frame_id = route.header.frame_id or "map"
-        current_yaw = self._lookup_robot_yaw(frame_id)
-        if current_yaw is None:
-            return False
-
-        delta_yaw = self._normalize_angle(desired_yaw - current_yaw)
-        if abs(delta_yaw) <= self._reverse_entry_yaw_tolerance:
-            self.get_logger().info(
-                "Reverse-entry yaw already aligned: desired=%.3f current=%.3f"
-                % (desired_yaw, current_yaw)
-            )
-            return True
+            else:
+                self.get_logger().info(
+                    "MoveTo starts from nearest JSON point %s (%d), distance=%.3fm"
+                    % (
+                        start_point["alias"],
+                        int(start_point["point_id"]),
+                        nearest_distance,
+                    )
+                )
 
         self.get_logger().info(
-            "Aligning for reverse entry in %s: current=%.3f desired=%.3f spin=%.3f"
-            % (frame_id, current_yaw, desired_yaw, delta_yaw)
-        )
-        spin_goal = Spin.Goal()
-        spin_goal.target_yaw = float(delta_yaw)
-        spin_goal.time_allowance = self._duration_from_seconds(
-            self._reverse_entry_spin_timeout_sec
-        )
-        spin_result = self._send_action_goal_and_wait(
-            self._spin_client,
-            spin_goal,
-            timeout_sec=self._reverse_entry_spin_timeout_sec,
-        )
-        if spin_result is None:
-            self.get_logger().error("Spin action failed or timed out")
-            return False
-        if getattr(spin_result, "error_code", 0) != Spin.Result.NONE:
-            self.get_logger().error(
-                "Spin action returned error %s: %s"
-                % (
-                    getattr(spin_result, "error_code", "<unknown>"),
-                    getattr(spin_result, "error_msg", ""),
-                )
+            "Following JSON route from %s (%d) to %s (%d), poses=%d"
+            % (
+                start_point["alias"],
+                int(start_point["point_id"]),
+                goal_point["alias"],
+                int(goal_point["point_id"]),
+                len(path.poses),
             )
-            return False
-        return True
+        )
 
-    def _reverse_entry_yaw(self, route) -> Optional[float]:
-        if not getattr(route, "edges", None):
-            return None
-        final_edge = route.edges[-1]
-        dx = float(final_edge.start.x - final_edge.end.x)
-        dy = float(final_edge.start.y - final_edge.end.y)
+        if resolved_request["goal_yaw"] is not None:
+            self.get_logger().info(
+                "Goal %s has explicit yaw=%.3f rad; final rotation will run after path"
+                % (goal_point["alias"], float(resolved_request["goal_yaw"]))
+            )
+
+    def _index_points(
+        self, map_data: MapData
+    ) -> Tuple[Dict[int, Point], Dict[str, Point]]:
+        points = list(map_data.get("point", []))
+        if not points:
+            raise ValueError("map contains no points")
+
+        points_by_id: Dict[int, Point] = {}
+        points_by_alias: Dict[str, Point] = {}
+        for point in points:
+            point_id = int(point["point_id"])
+            alias = str(point["alias"])
+            points_by_id[point_id] = point
+            points_by_alias[alias] = point
+
+        return points_by_id, points_by_alias
+
+    def _resolve_point(
+        self,
+        value: Any,
+        points_by_id: Dict[int, Point],
+        points_by_alias: Dict[str, Point],
+    ) -> Point:
+        if isinstance(value, dict):
+            if "alias" in value:
+                return self._resolve_point(value["alias"], points_by_id, points_by_alias)
+            if "point_id" in value:
+                return self._resolve_point(
+                    value["point_id"], points_by_id, points_by_alias
+                )
+            raise ValueError("point object must contain 'alias' or 'point_id'")
+
+        if isinstance(value, int):
+            if value in points_by_id:
+                return points_by_id[value]
+            raise ValueError(f"unknown point_id {value}")
+
+        normalized = str(value).strip()
+        if normalized in points_by_alias:
+            return points_by_alias[normalized]
+        if normalized.isdigit():
+            point_id = int(normalized)
+            if point_id in points_by_id:
+                return points_by_id[point_id]
+
+        raise ValueError(f"unknown point '{value}'")
+
+    def _build_adjacency(
+        self, map_data: MapData, points_by_id: Dict[int, Point]
+    ) -> Adjacency:
+        adjacency: Adjacency = {point_id: [] for point_id in points_by_id}
+        for route_edge in map_data.get("path", []):
+            if not self._is_released(route_edge):
+                continue
+
+            try:
+                start_point_id = int(route_edge["start_point_id"])
+                end_point_id = int(route_edge["end_point_id"])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            if start_point_id not in points_by_id or end_point_id not in points_by_id:
+                continue
+
+            weight = self._point_distance(
+                points_by_id[start_point_id], points_by_id[end_point_id]
+            )
+            adjacency[start_point_id].append((end_point_id, weight))
+
+        return adjacency
+
+    def _nearest_point(
+        self, robot_pose: RobotPose, points_by_id: Dict[int, Point]
+    ) -> Tuple[Point, float]:
+        if not points_by_id:
+            raise ValueError("map contains no points")
+
+        robot_x, robot_y, _ = robot_pose
+        nearest_point = min(
+            points_by_id.values(),
+            key=lambda point: self._distance_xy(
+                robot_x,
+                robot_y,
+                float(point["position_x"]),
+                float(point["position_y"]),
+            ),
+        )
+        nearest_distance = self._distance_xy(
+            robot_x,
+            robot_y,
+            float(nearest_point["position_x"]),
+            float(nearest_point["position_y"]),
+        )
+        return nearest_point, nearest_distance
+
+    def _shortest_path(
+        self, start_point_id: int, goal_point_id: int, adjacency: Adjacency
+    ) -> List[int]:
+        if start_point_id not in adjacency:
+            raise ValueError(f"start point_id {start_point_id} is not in JSON map")
+        if goal_point_id not in adjacency:
+            raise ValueError(f"goal point_id {goal_point_id} is not in JSON map")
+
+        distances = {start_point_id: 0.0}
+        previous: Dict[int, Optional[int]] = {start_point_id: None}
+        queue = [(0.0, start_point_id)]
+
+        while queue:
+            distance, point_id = heapq.heappop(queue)
+            if distance > distances.get(point_id, math.inf):
+                continue
+            if point_id == goal_point_id:
+                break
+
+            for neighbor_id, edge_weight in adjacency.get(point_id, []):
+                new_distance = distance + edge_weight
+                if new_distance >= distances.get(neighbor_id, math.inf):
+                    continue
+                distances[neighbor_id] = new_distance
+                previous[neighbor_id] = point_id
+                heapq.heappush(queue, (new_distance, neighbor_id))
+
+        if goal_point_id not in previous:
+            raise ValueError(
+                "no JSON route from point_id %d to point_id %d"
+                % (start_point_id, goal_point_id)
+            )
+
+        route_point_ids = []
+        current: Optional[int] = goal_point_id
+        while current is not None:
+            route_point_ids.append(current)
+            current = previous[current]
+        route_point_ids.reverse()
+        return route_point_ids
+
+    def _build_path(
+        self,
+        route_point_ids: List[int],
+        points_by_id: Dict[int, Point],
+        initial_pose: Optional[RobotPose],
+    ) -> Path:
+        path_points: List[PathPoint] = []
+        if initial_pose is not None:
+            path_points.append((initial_pose[0], initial_pose[1]))
+
+        for point_id in route_point_ids:
+            point = points_by_id[point_id]
+            path_points.append(
+                (float(point["position_x"]), float(point["position_y"]))
+            )
+
+        path = Path()
+        path.header.frame_id = self._frame_id
+        path.header.stamp = self.get_clock().now().to_msg()
+
+        for index, (x, y) in enumerate(path_points):
+            pose = PoseStamped()
+            pose.header = path.header
+            pose.pose.position.x = x
+            pose.pose.position.y = y
+            pose.pose.position.z = 0.0
+            yaw = self._path_point_yaw(path_points, index)
+            (
+                pose.pose.orientation.x,
+                pose.pose.orientation.y,
+                pose.pose.orientation.z,
+                pose.pose.orientation.w,
+            ) = self._quaternion_from_yaw(yaw)
+            path.poses.append(pose)
+        return path
+
+    def _path_point_yaw(self, path_points: List[PathPoint], index: int) -> float:
+        if index < len(path_points) - 1:
+            return self._yaw_between_xy(path_points[index], path_points[index + 1])
+        if index > 0:
+            return self._yaw_between_xy(path_points[index - 1], path_points[index])
+        return 0.0
+
+    def _yaw_between_xy(self, start: PathPoint, end: PathPoint) -> float:
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
         if math.hypot(dx, dy) <= 1e-9:
-            return None
+            return 0.0
         return math.atan2(dy, dx)
 
-    def _lookup_robot_yaw(self, target_frame: str) -> Optional[float]:
+    def _point_distance(self, lhs: Point, rhs: Point) -> float:
+        return self._distance_xy(
+            float(lhs["position_x"]),
+            float(lhs["position_y"]),
+            float(rhs["position_x"]),
+            float(rhs["position_y"]),
+        )
+
+    def _distance_xy(self, ax: float, ay: float, bx: float, by: float) -> float:
+        return math.hypot(ax - bx, ay - by)
+
+    def _goal_yaw(self, point: Point) -> Optional[float]:
+        for key in ("yaw", "goal_yaw", "arrival_yaw"):
+            if key not in point:
+                continue
+            try:
+                return float(point[key])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "point %s has invalid %s value: %r"
+                    % (point.get("alias", point.get("point_id")), key, point[key])
+                ) from exc
+        return None
+
+    def _rotate_to_yaw(self, target_yaw: float) -> bool:
+        deadline = time.monotonic() + self._yaw_timeout_sec
+        period = 1.0 / self._yaw_control_frequency
+
+        while rclpy.ok():
+            try:
+                robot_pose = self._lookup_robot_pose(log_errors=False)
+            except ValueError:
+                if self._yaw_timeout_sec > 0.0 and time.monotonic() > deadline:
+                    self._publish_stop()
+                    self.get_logger().error(
+                        "Final yaw rotation timed out: robot pose is not available"
+                    )
+                    return False
+                time.sleep(period)
+                continue
+
+            _, _, current_yaw = robot_pose
+            delta_yaw = self._normalize_angle(target_yaw - current_yaw)
+            if abs(delta_yaw) <= self._yaw_tolerance:
+                self._publish_stop()
+                self.get_logger().info(
+                    "Final yaw reached: current=%.3f target=%.3f"
+                    % (current_yaw, target_yaw)
+                )
+                return True
+
+            if self._yaw_timeout_sec > 0.0 and time.monotonic() > deadline:
+                self._publish_stop()
+                self.get_logger().error(
+                    "Final yaw rotation timed out: current=%.3f target=%.3f"
+                    % (current_yaw, target_yaw)
+                )
+                return False
+
+            twist = Twist()
+            twist.angular.z = math.copysign(self._yaw_angular_speed, delta_yaw)
+            self._cmd_vel_publisher.publish(twist)
+            time.sleep(period)
+
+        self._publish_stop()
+        return False
+
+    def _publish_stop(self) -> None:
+        self._cmd_vel_publisher.publish(Twist())
+
+    def _lookup_robot_pose(self, *, log_errors: bool = True) -> RobotPose:
         try:
             transform = self._tf_buffer.lookup_transform(
-                target_frame,
+                self._frame_id,
                 self._robot_base_frame,
                 Time(),
-                timeout=RclpyDuration(seconds=1.0),
+                timeout=RclpyDuration(seconds=self._transform_timeout_sec),
             )
         except TransformException as exc:
-            self.get_logger().error(
-                "Failed to lookup %s -> %s transform for reverse entry: %s"
-                % (target_frame, self._robot_base_frame, exc)
-            )
-            return None
+            if log_errors:
+                self.get_logger().error(
+                    "Failed to lookup %s -> %s transform: %s"
+                    % (self._frame_id, self._robot_base_frame, exc)
+                )
+            raise ValueError("robot pose is not available") from exc
 
+        translation = transform.transform.translation
         rotation = transform.transform.rotation
-        return self._yaw_from_quaternion(
-            rotation.x,
-            rotation.y,
-            rotation.z,
-            rotation.w,
+        return (
+            float(translation.x),
+            float(translation.y),
+            self._yaw_from_quaternion(
+                rotation.x,
+                rotation.y,
+                rotation.z,
+                rotation.w,
+            ),
         )
 
     def _yaw_from_quaternion(self, x: float, y: float, z: float, w: float) -> float:
@@ -546,46 +666,32 @@ class RouteServiceNode(Node):
         cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
         return math.atan2(siny_cosp, cosy_cosp)
 
-    def _final_route_edge_distance(self, route) -> Optional[float]:
-        if not getattr(route, "edges", None):
-            return None
-        final_edge = route.edges[-1]
-        dx = float(final_edge.end.x - final_edge.start.x)
-        dy = float(final_edge.end.y - final_edge.start.y)
-        return math.hypot(dx, dy)
-
-    def _path_before_final_edge(self, path: Path, route) -> Optional[Path]:
-        if not path.poses or not getattr(route, "edges", None):
-            return None
-
-        final_edge = route.edges[-1]
-        split_index = min(
-            range(len(path.poses)),
-            key=lambda index: self._distance_sq_to_point(
-                path.poses[index].pose.position,
-                final_edge.start,
-            ),
-        )
-        if split_index <= 0:
-            return None
-
-        prefix_path = Path()
-        prefix_path.header = path.header
-        prefix_path.poses = list(path.poses[: split_index + 1])
-        return prefix_path
-
-    def _distance_sq_to_point(self, lhs, rhs) -> float:
-        dx = float(lhs.x - rhs.x)
-        dy = float(lhs.y - rhs.y)
-        return dx * dx + dy * dy
-
-    def _duration_from_seconds(self, seconds: float) -> Duration:
-        whole_seconds = int(max(0.0, seconds))
-        nanoseconds = int((max(0.0, seconds) - whole_seconds) * 1_000_000_000)
-        return Duration(sec=whole_seconds, nanosec=nanoseconds)
-
     def _normalize_angle(self, angle: float) -> float:
         return math.atan2(math.sin(angle), math.cos(angle))
+
+    def _is_released(self, route_edge: Dict[str, Any]) -> bool:
+        if "released" not in route_edge:
+            return True
+        return self._is_truthy(route_edge["released"])
+
+    def _is_truthy(self, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str):
+            return value.strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "y",
+                "on",
+            }
+        return False
+
+    def _quaternion_from_yaw(self, yaw: float) -> Tuple[float, float, float, float]:
+        half_yaw = yaw * 0.5
+        return 0.0, 0.0, math.sin(half_yaw), math.cos(half_yaw)
 
     def _call_service_and_wait(self, client, request, *, timeout_sec: float):
         response_event = threading.Event()
@@ -667,7 +773,9 @@ class RouteServiceNode(Node):
             return None
 
         if "result_error" in state:
-            self.get_logger().error("Action result retrieval failed: %s" % state["result_error"])
+            self.get_logger().error(
+                "Action result retrieval failed: %s" % state["result_error"]
+            )
             return None
 
         result_response = state.get("result_response")
@@ -688,31 +796,6 @@ class RouteServiceNode(Node):
             if key in payload:
                 return payload[key]
         raise ValueError("missing '%s' field" % label)
-
-    def _normalize_arrival_mode(self, value: Any) -> str:
-        normalized = str(value).strip().lower()
-        if normalized in {
-            "front",
-            "forward",
-            "forks_first",
-            "forks-first",
-            "forksfirst",
-            "передом",
-            "перед",
-        }:
-            return "front"
-        if normalized in {
-            "rear",
-            "reverse",
-            "backward",
-            "body_first",
-            "body-first",
-            "bodyfirst",
-            "задом",
-            "зад",
-        }:
-            return "rear"
-        raise ValueError("unsupported arrival_mode '%s'" % value)
 
 
 def main(args=None) -> None:

@@ -34,63 +34,6 @@ controller_server:
       allow_reversing: true
       transform_tolerance: 0.2
 
-planner_server:
-  ros__parameters:
-    use_sim_time: true
-    expected_planner_frequency: 10.0
-    costmap_update_timeout: 1.0
-    planner_plugins: ["GridBased"]
-
-    GridBased:
-      plugin: "nav2_navfn_planner::NavfnPlanner"
-      tolerance: 0.25
-      use_astar: false
-      allow_unknown: true
-
-behavior_server:
-  ros__parameters:
-    use_sim_time: true
-    enable_stamped_cmd_vel: false
-    costmap_topic: local_costmap/costmap_raw
-    footprint_topic: local_costmap/published_footprint
-    cycle_frequency: 10.0
-    behavior_plugins: ["spin", "backup", "drive_on_heading", "wait"]
-
-    spin:
-      plugin: "nav2_behaviors::Spin"
-    backup:
-      plugin: "nav2_behaviors::BackUp"
-    drive_on_heading:
-      plugin: "nav2_behaviors::DriveOnHeading"
-    wait:
-      plugin: "nav2_behaviors::Wait"
-
-    global_frame: odom
-    robot_base_frame: base_link
-    transform_tolerance: 0.2
-    simulate_ahead_time: 2.0
-    max_rotational_vel: 0.5
-    min_rotational_vel: 0.2
-    rotational_acc_lim: 2.5
-
-bt_navigator:
-  ros__parameters:
-    use_sim_time: true
-    global_frame: map
-    robot_base_frame: base_link
-    odom_topic: /odom
-    bt_loop_duration: 10
-    default_server_timeout: 20
-    wait_for_service_timeout: 1000
-
-bt_navigator_navigate_through_poses_rclcpp_node:
-  ros__parameters:
-    use_sim_time: true
-
-bt_navigator_navigate_to_pose_rclcpp_node:
-  ros__parameters:
-    use_sim_time: true
-
 global_costmap:
   global_costmap:
     ros__parameters:
@@ -170,9 +113,5 @@ lifecycle_manager_navigation:
     node_names:
       [
         "controller_server",
-        "planner_server",
-        "behavior_server",
-        "bt_navigator",
-        "route_server",
         "collision_monitor",
       ]
