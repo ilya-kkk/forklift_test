@@ -958,9 +958,9 @@
     <plugin filename="gz-sim-joint-position-controller-system" name="gz::sim::systems::JointPositionController">
       <joint_name>right_steering_joint</joint_name>
       <topic>/forklift/right_steering_cmd</topic>
-      <p_gain>80</p_gain>
+      <p_gain>1800</p_gain>
       <i_gain>0.5</i_gain>
-      <d_gain>12</d_gain>
+      <d_gain>300</d_gain>
       <i_max>5</i_max>
       <i_min>-5</i_min>
     </plugin>

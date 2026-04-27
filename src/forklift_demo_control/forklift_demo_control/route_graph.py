@@ -64,20 +64,33 @@ def build_geojson_route_graph(
     features: List[MapDict] = []
     for point_id in sorted(points_by_id):
         point = points_by_id[point_id]
+        metadata = {
+            "alias": str(point.get("alias", "")),
+            "point_type": str(point.get("point_type", "")),
+            "released": bool(point.get("released", True)),
+            "spin": bool(point.get("spin", False)),
+            "marker_group": dict(point.get("marker_group", {})),
+            "action": dict(point.get("action", {})),
+        }
+        for key in (
+            "reverse_entry",
+            "reverse_final_edge",
+            "pallet",
+            "has_pallet",
+            "pallet_present",
+            "contains_pallet",
+            "occupied_by_pallet",
+        ):
+            if key in point:
+                metadata[key] = point[key]
+
         features.append(
             {
                 "type": "Feature",
                 "properties": {
                     "id": point_id,
                     "frame": frame_id,
-                    "metadata": {
-                        "alias": str(point.get("alias", "")),
-                        "point_type": str(point.get("point_type", "")),
-                        "released": bool(point.get("released", True)),
-                        "spin": bool(point.get("spin", False)),
-                        "marker_group": dict(point.get("marker_group", {})),
-                        "action": dict(point.get("action", {})),
-                    },
+                    "metadata": metadata,
                 },
                 "geometry": {
                     "type": "Point",

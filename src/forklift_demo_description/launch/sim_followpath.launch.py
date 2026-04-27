@@ -222,7 +222,7 @@ def generate_launch_description() -> LaunchDescription:
         executable="route_service",
         name="route_service",
         output="screen",
-        parameters=[{"use_sim_time": use_sim_time}],
+        parameters=[{"use_sim_time": use_sim_time, "graph_filepath": graph_filepath}],
     )
 
     start_navigation_after_graph = RegisterEventHandler(

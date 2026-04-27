@@ -12,7 +12,14 @@ def build_demo_map() -> MapJson:
         _build_point(alias="0002", point_id=3, x=0.0, y=4.0, marker_id=2),
         _build_point(alias="0003", point_id=4, x=4.0, y=4.0, marker_id=3),
         _build_point(alias="0004", point_id=5, x=4.0, y=-4.0, marker_id=4),
-        _build_point(alias="0005", point_id=6, x=0.0, y=1.0, marker_id=5),
+        _build_point(
+            alias="0005",
+            point_id=6,
+            x=0.0,
+            y=1.0,
+            marker_id=5,
+            has_pallet=True,
+        ),
         _build_point(alias="0006", point_id=7, x=-2.0, y=1.0, marker_id=6),
         _build_point(alias="0007", point_id=8, x=-2.0, y=-4.0, marker_id=7),
     ]
@@ -51,8 +58,9 @@ def _build_point(
     x: float,
     y: float,
     marker_id: int,
+    has_pallet: bool = False,
 ) -> Dict[str, Any]:
-    return {
+    point = {
         "alias": alias,
         "point_type": "LP",
         "point_id": point_id,
@@ -74,6 +82,9 @@ def _build_point(
         },
         "spin": True,
     }
+    if has_pallet:
+        point["has_pallet"] = True
+    return point
 
 
 def _build_path(
