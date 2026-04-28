@@ -57,7 +57,9 @@ services:
       chmod 700 /tmp/runtime-user &&
       until [ -f /ws/install/setup.bash ]; do sleep 1; done &&
       source /ws/install/setup.bash &&
-      ros2 run rviz2 rviz2 -d /ws/src/forklift_demo_description/rviz/demo.rviz"
+      for i in $(seq 1 30); do ros2 topic echo /clock --once >/dev/null 2>&1 && break; sleep 1; done &&
+      sleep 2 &&
+      ros2 run rviz2 rviz2 -d /ws/src/forklift_demo_description/rviz/demo.rviz --ros-args -p use_sim_time:=true"
 
   rqt:
     image: forklift_demo:jazzy

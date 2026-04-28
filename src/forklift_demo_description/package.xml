@@ -11,6 +11,7 @@
   <depend>forklift_demo_control</depend>
   <depend>launch</depend>
   <depend>launch_ros</depend>
+  <depend>nav2_behaviors</depend>
   <depend>nav2_collision_monitor</depend>
   <depend>nav2_controller</depend>
   <depend>nav2_costmap_2d</depend>

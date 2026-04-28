@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped, Twist
-from nav2_msgs.action import FollowPath
+from nav2_msgs.action import DriveOnHeading, FollowPath, Spin
 from nav_msgs.msg import Path
 from rclpy.action import ActionClient
 from rclpy.duration import Duration as RclpyDuration
@@ -33,7 +33,12 @@ class RouteServiceNode(Node):
         self.declare_parameter("map_service_name", "/robot_data/map/get_map")
         self.declare_parameter("route_service_name", "/robot_data/route/go_to_point")
         self.declare_parameter("move_to_service_name", "/forklift_nav/move_to")
+        self.declare_parameter(
+            "revers_move_to_service_name", "/forklift_nav/revers_move_to"
+        )
         self.declare_parameter("follow_path_action_name", "follow_path")
+        self.declare_parameter("spin_action_name", "spin")
+        self.declare_parameter("drive_on_heading_action_name", "drive_on_heading")
         self.declare_parameter("path_topic", "/route_path")
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("robot_base_frame", "base_link")
@@ -44,15 +49,25 @@ class RouteServiceNode(Node):
         self.declare_parameter("transform_timeout_sec", 1.0)
         self.declare_parameter("cmd_vel_topic", "/cmd_vel_raw")
         self.declare_parameter("yaw_tolerance", 0.05)
+        self.declare_parameter("path_alignment_min_segment_length", 0.35)
         self.declare_parameter("yaw_angular_speed", 0.35)
         self.declare_parameter("yaw_timeout_sec", 20.0)
         self.declare_parameter("yaw_control_frequency", 20.0)
+        self.declare_parameter("short_route_threshold_m", 1.0)
+        self.declare_parameter("short_route_speed_mps", 0.2)
 
         self._map_service_name = str(self.get_parameter("map_service_name").value)
         route_service_name = str(self.get_parameter("route_service_name").value)
         move_to_service_name = str(self.get_parameter("move_to_service_name").value)
+        revers_move_to_service_name = str(
+            self.get_parameter("revers_move_to_service_name").value
+        )
         follow_path_action_name = str(
             self.get_parameter("follow_path_action_name").value
+        )
+        spin_action_name = str(self.get_parameter("spin_action_name").value)
+        drive_on_heading_action_name = str(
+            self.get_parameter("drive_on_heading_action_name").value
         )
         path_topic = str(self.get_parameter("path_topic").value)
         cmd_vel_topic = str(self.get_parameter("cmd_vel_topic").value)
@@ -70,6 +85,10 @@ class RouteServiceNode(Node):
             0.0, float(self.get_parameter("transform_timeout_sec").value)
         )
         self._yaw_tolerance = max(0.0, float(self.get_parameter("yaw_tolerance").value))
+        self._path_alignment_min_segment_length = max(
+            0.01,
+            float(self.get_parameter("path_alignment_min_segment_length").value),
+        )
         self._yaw_angular_speed = max(
             0.01, float(self.get_parameter("yaw_angular_speed").value)
         )
@@ -78,6 +97,12 @@ class RouteServiceNode(Node):
         )
         self._yaw_control_frequency = max(
             1.0, float(self.get_parameter("yaw_control_frequency").value)
+        )
+        self._short_route_threshold_m = max(
+            0.0, float(self.get_parameter("short_route_threshold_m").value)
+        )
+        self._short_route_speed_mps = max(
+            0.01, float(self.get_parameter("short_route_speed_mps").value)
         )
 
         path_qos = QoSProfile(
@@ -89,6 +114,10 @@ class RouteServiceNode(Node):
         self._cmd_vel_publisher = self.create_publisher(Twist, cmd_vel_topic, 10)
         self._map_client = self.create_client(StringWithJson, self._map_service_name)
         self._follow_path_client = ActionClient(self, FollowPath, follow_path_action_name)
+        self._spin_client = ActionClient(self, Spin, spin_action_name)
+        self._drive_on_heading_client = ActionClient(
+            self, DriveOnHeading, drive_on_heading_action_name
+        )
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
@@ -98,20 +127,31 @@ class RouteServiceNode(Node):
         self.create_service(
             StringWithJson, move_to_service_name, self._handle_move_to_request
         )
+        self.create_service(
+            StringWithJson,
+            revers_move_to_service_name,
+            self._handle_revers_move_to_request,
+        )
 
         self._lock = threading.Lock()
         self._active_request: Optional[Dict[str, Any]] = None
 
         self.get_logger().info(
-            "Route service ready: route=%s move_to=%s map=%s follow_path=%s "
-            "path_topic=%s cmd_vel=%s json_graph=true"
+            "Route service ready: route=%s move_to=%s revers_move_to=%s map=%s follow_path=%s spin=%s drive_on_heading=%s "
+            "path_topic=%s cmd_vel=%s align_min_seg=%.2f short_route_threshold=%.2f short_speed=%.2f json_graph=true"
             % (
                 route_service_name,
                 move_to_service_name,
+                revers_move_to_service_name,
                 self._map_service_name,
                 follow_path_action_name,
+                spin_action_name,
+                drive_on_heading_action_name,
                 path_topic,
                 cmd_vel_topic,
+                self._path_alignment_min_segment_length,
+                self._short_route_threshold_m,
+                self._short_route_speed_mps,
             )
         )
 
@@ -131,7 +171,20 @@ class RouteServiceNode(Node):
     def _handle_move_to_request(self, request, response):
         try:
             payload = self._decode_move_to_payload(request.message or "{}")
-            pending_request = self._normalize_move_to_request(payload)
+            pending_request = self._normalize_move_to_request(payload, "move_to")
+        except ValueError as exc:
+            response.success = False
+            response.message = json.dumps(
+                {"error": "invalid_request", "details": str(exc)}, ensure_ascii=False
+            )
+            return response
+
+        return self._accept_request(pending_request, response)
+
+    def _handle_revers_move_to_request(self, request, response):
+        try:
+            payload = self._decode_move_to_payload(request.message or "{}")
+            pending_request = self._normalize_move_to_request(payload, "revers_move_to")
         except ValueError as exc:
             response.success = False
             response.message = json.dumps(
@@ -211,14 +264,16 @@ class RouteServiceNode(Node):
             "goal_value": goal_value,
         }
 
-    def _normalize_move_to_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_move_to_request(
+        self, payload: Dict[str, Any], mode: str
+    ) -> Dict[str, Any]:
         goal_value = self._extract_required_value(
             payload,
             ("id", "point_id", "goal", "goal_point", "target", "target_point", "to"),
             "id",
         )
         return {
-            "mode": "move_to",
+            "mode": mode,
             "goal_value": goal_value,
         }
 
@@ -242,7 +297,7 @@ class RouteServiceNode(Node):
 
         initial_pose = None
         nearest_distance = None
-        if pending_request["mode"] == "move_to":
+        if pending_request["mode"] in {"move_to", "revers_move_to"}:
             current_pose = self._lookup_robot_pose()
             start_point, nearest_distance = self._nearest_point(
                 current_pose, points_by_id
@@ -265,6 +320,8 @@ class RouteServiceNode(Node):
             "mode": pending_request["mode"],
             "path": path,
             "route_point_ids": route_point_ids,
+            "points_by_id": points_by_id,
+            "initial_pose": initial_pose,
             "start_point": start_point,
             "goal_point": goal_point,
             "nearest_distance": nearest_distance,
@@ -296,21 +353,23 @@ class RouteServiceNode(Node):
             self.get_logger().error("FollowPath action is not available")
             return
 
+        if resolved_request["mode"] == "revers_move_to":
+            self._run_revers_move_to_request(resolved_request)
+            return
+
         path = resolved_request["path"]
-        start_point = resolved_request["start_point"]
         goal_point = resolved_request["goal_point"]
         goal_yaw = resolved_request["goal_yaw"]
 
-        self._path_publisher.publish(path)
         self._log_route(resolved_request, path)
 
         if len(path.poses) > 1:
-            if not self._follow_path(path):
+            if not self._follow_path(path, motion_mode="forward"):
                 return
         else:
             self.get_logger().info("Route execution skipped: already at drive goal")
 
-        if goal_yaw is not None and not self._rotate_to_yaw(goal_yaw):
+        if goal_yaw is not None and not self._rotate_to_yaw(goal_yaw, "goal yaw"):
             return
 
         self.get_logger().info(
@@ -318,7 +377,66 @@ class RouteServiceNode(Node):
             % (goal_point["alias"], int(goal_point["point_id"]))
         )
 
-    def _follow_path(self, path: Path) -> bool:
+    def _run_revers_move_to_request(self, resolved_request: Dict[str, Any]) -> None:
+        points_by_id = resolved_request["points_by_id"]
+        route_point_ids = resolved_request["route_point_ids"]
+        initial_pose = resolved_request["initial_pose"]
+        goal_point = resolved_request["goal_point"]
+
+        self._log_route(resolved_request, resolved_request["path"])
+
+        prefix_path = None
+        reverse_path = None
+
+        if len(route_point_ids) >= 2:
+            prefix_ids = route_point_ids[:-1]
+            prefix_path = self._build_path(prefix_ids, points_by_id, initial_pose)
+            reverse_path = self._build_path(
+                route_point_ids[-2:],
+                points_by_id,
+                None,
+                reverse=True,
+            )
+        elif initial_pose is not None and route_point_ids:
+            reverse_path = self._build_path(
+                route_point_ids,
+                points_by_id,
+                initial_pose,
+                reverse=True,
+            )
+
+        if prefix_path is not None and len(prefix_path.poses) > 1:
+            self.get_logger().info(
+                "ReversMoveTo following forward prefix, poses=%d"
+                % len(prefix_path.poses)
+            )
+            if not self._follow_path(prefix_path, motion_mode="forward"):
+                return
+
+        if reverse_path is not None and len(reverse_path.poses) > 1:
+            self.get_logger().info(
+                "ReversMoveTo following final edge backwards, poses=%d"
+                % len(reverse_path.poses)
+            )
+            if not self._follow_path(reverse_path, motion_mode="reverse"):
+                return
+        else:
+            self.get_logger().info("ReversMoveTo skipped: already at drive goal")
+
+        self.get_logger().info(
+            "ReversMoveTo execution finished successfully at %s (%d)"
+            % (goal_point["alias"], int(goal_point["point_id"]))
+        )
+
+    def _follow_path(self, path: Path, *, motion_mode: str) -> bool:
+        path_length = self._path_length(path)
+        if path_length < self._short_route_threshold_m:
+            return self._drive_short_route(path, path_length, motion_mode=motion_mode)
+
+        if not self._ensure_robot_facing_path(path, motion_mode=motion_mode):
+            return False
+
+        self._path_publisher.publish(path)
         follow_goal = FollowPath.Goal()
         follow_goal.path = path
         follow_goal.controller_id = self._controller_id
@@ -333,17 +451,129 @@ class RouteServiceNode(Node):
             return False
         return True
 
+    def _drive_short_route(
+        self, path: Path, path_length: float, *, motion_mode: str
+    ) -> bool:
+        if not self._ensure_robot_facing_path(path, motion_mode=motion_mode):
+            return False
+
+        if not self._drive_on_heading_client.wait_for_server(timeout_sec=5.0):
+            self.get_logger().error("DriveOnHeading action is not available")
+            return False
+
+        drive_goal = DriveOnHeading.Goal()
+        drive_sign = 1.0 if motion_mode == "forward" else -1.0
+        drive_goal.target.x = float(path_length * drive_sign)
+        drive_goal.target.y = 0.0
+        drive_goal.target.z = 0.0
+        drive_goal.speed = float(self._short_route_speed_mps * drive_sign)
+        drive_goal.time_allowance.sec = int(self._yaw_timeout_sec)
+        drive_goal.time_allowance.nanosec = int(
+            max(0.0, self._yaw_timeout_sec - int(self._yaw_timeout_sec)) * 1e9
+        )
+
+        self.get_logger().info(
+            "Short route %.3fm detected, using DriveOnHeading mode=%s speed=%.3f m/s"
+            % (path_length, motion_mode, self._short_route_speed_mps * drive_sign)
+        )
+        drive_result = self._send_action_goal_and_wait(
+            self._drive_on_heading_client,
+            drive_goal,
+            timeout_sec=self._yaw_timeout_sec if self._yaw_timeout_sec > 0.0 else 20.0,
+        )
+        if drive_result is None:
+            self.get_logger().error("DriveOnHeading action failed or timed out")
+            return False
+        return True
+
+    def _ensure_robot_facing_path(self, path: Path, *, motion_mode: str) -> bool:
+        if len(path.poses) <= 1:
+            return True
+
+        target_yaw = self._target_yaw_for_path_alignment(path)
+        if target_yaw is None:
+            return True
+        if motion_mode == "reverse":
+            target_yaw = self._normalize_angle(target_yaw + math.pi)
+
+        try:
+            _, _, current_yaw = self._lookup_robot_pose()
+        except ValueError:
+            self.get_logger().error(
+                "Failed to align with path: robot pose is not available"
+            )
+            return False
+
+        delta_yaw = self._normalize_angle(target_yaw - current_yaw)
+        if abs(delta_yaw) <= self._yaw_tolerance:
+            return True
+
+        if not self._spin_client.wait_for_server(timeout_sec=5.0):
+            self.get_logger().error("Spin action is not available")
+            return False
+
+        spin_goal = Spin.Goal()
+        spin_goal.target_yaw = float(delta_yaw)
+        spin_goal.time_allowance.sec = int(self._yaw_timeout_sec)
+        spin_goal.time_allowance.nanosec = int(
+            max(0.0, self._yaw_timeout_sec - int(self._yaw_timeout_sec)) * 1e9
+        )
+
+        self.get_logger().info(
+            "Robot is not aligned with path (%s), spinning by %.3f rad before FollowPath"
+            % (motion_mode, delta_yaw)
+        )
+        spin_result = self._send_action_goal_and_wait(
+            self._spin_client,
+            spin_goal,
+            timeout_sec=self._yaw_timeout_sec if self._yaw_timeout_sec > 0.0 else 20.0,
+        )
+        if spin_result is None:
+            self.get_logger().error("Spin action failed or timed out")
+            return False
+        return True
+
+    def _target_yaw_for_path_alignment(self, path: Path) -> Optional[float]:
+        # Use the first meaningful segment so tiny snap-to-nearest segments
+        # don't hide a 180-degree heading error.
+        first_non_zero: Optional[float] = None
+        for index in range(len(path.poses) - 1):
+            start = path.poses[index].pose.position
+            end = path.poses[index + 1].pose.position
+            dx = float(end.x - start.x)
+            dy = float(end.y - start.y)
+            segment_length = math.hypot(dx, dy)
+            if segment_length <= 1e-6:
+                continue
+            yaw = math.atan2(dy, dx)
+            if first_non_zero is None:
+                first_non_zero = yaw
+            if segment_length >= self._path_alignment_min_segment_length:
+                return yaw
+        return first_non_zero
+
+    def _path_length(self, path: Path) -> float:
+        if len(path.poses) <= 1:
+            return 0.0
+        length = 0.0
+        for index in range(len(path.poses) - 1):
+            start = path.poses[index].pose.position
+            end = path.poses[index + 1].pose.position
+            length += math.hypot(float(end.x - start.x), float(end.y - start.y))
+        return length
+
     def _log_route(self, resolved_request: Dict[str, Any], path: Path) -> None:
         start_point = resolved_request["start_point"]
         goal_point = resolved_request["goal_point"]
         mode = resolved_request["mode"]
 
-        if mode == "move_to":
+        if mode in {"move_to", "revers_move_to"}:
             nearest_distance = float(resolved_request["nearest_distance"])
             if resolved_request["used_initial_pose"]:
                 self.get_logger().info(
-                    "MoveTo snapped current pose to nearest JSON point %s (%d), distance=%.3fm"
+                    "%s snapped current pose to nearest JSON point %s (%d), distance=%.3fm"
                     % (
+                        mode,
                         start_point["alias"],
                         int(start_point["point_id"]),
                         nearest_distance,
@@ -351,8 +581,9 @@ class RouteServiceNode(Node):
                 )
             else:
                 self.get_logger().info(
-                    "MoveTo starts from nearest JSON point %s (%d), distance=%.3fm"
+                    "%s starts from nearest JSON point %s (%d), distance=%.3fm"
                     % (
+                        mode,
                         start_point["alias"],
                         int(start_point["point_id"]),
                         nearest_distance,
@@ -370,7 +601,7 @@ class RouteServiceNode(Node):
             )
         )
 
-        if resolved_request["goal_yaw"] is not None:
+        if mode != "revers_move_to" and resolved_request["goal_yaw"] is not None:
             self.get_logger().info(
                 "Goal %s has explicit yaw=%.3f rad; final rotation will run after path"
                 % (goal_point["alias"], float(resolved_request["goal_yaw"]))
@@ -517,6 +748,8 @@ class RouteServiceNode(Node):
         route_point_ids: List[int],
         points_by_id: Dict[int, Point],
         initial_pose: Optional[RobotPose],
+        *,
+        reverse: bool = False,
     ) -> Path:
         path_points: List[PathPoint] = []
         if initial_pose is not None:
@@ -538,7 +771,7 @@ class RouteServiceNode(Node):
             pose.pose.position.x = x
             pose.pose.position.y = y
             pose.pose.position.z = 0.0
-            yaw = self._path_point_yaw(path_points, index)
+            yaw = self._path_point_yaw(path_points, index, reverse)
             (
                 pose.pose.orientation.x,
                 pose.pose.orientation.y,
@@ -548,12 +781,19 @@ class RouteServiceNode(Node):
             path.poses.append(pose)
         return path
 
-    def _path_point_yaw(self, path_points: List[PathPoint], index: int) -> float:
+    def _path_point_yaw(
+        self, path_points: List[PathPoint], index: int, reverse: bool
+    ) -> float:
         if index < len(path_points) - 1:
-            return self._yaw_between_xy(path_points[index], path_points[index + 1])
-        if index > 0:
-            return self._yaw_between_xy(path_points[index - 1], path_points[index])
-        return 0.0
+            yaw = self._yaw_between_xy(path_points[index], path_points[index + 1])
+        elif index > 0:
+            yaw = self._yaw_between_xy(path_points[index - 1], path_points[index])
+        else:
+            yaw = 0.0
+
+        if reverse:
+            yaw = self._normalize_angle(yaw + math.pi)
+        return yaw
 
     def _yaw_between_xy(self, start: PathPoint, end: PathPoint) -> float:
         dx = end[0] - start[0]
@@ -586,7 +826,7 @@ class RouteServiceNode(Node):
                 ) from exc
         return None
 
-    def _rotate_to_yaw(self, target_yaw: float) -> bool:
+    def _rotate_to_yaw(self, target_yaw: float, label: str) -> bool:
         deadline = time.monotonic() + self._yaw_timeout_sec
         period = 1.0 / self._yaw_control_frequency
 
@@ -597,7 +837,7 @@ class RouteServiceNode(Node):
                 if self._yaw_timeout_sec > 0.0 and time.monotonic() > deadline:
                     self._publish_stop()
                     self.get_logger().error(
-                        "Final yaw rotation timed out: robot pose is not available"
+                        "%s rotation timed out: robot pose is not available" % label
                     )
                     return False
                 time.sleep(period)
@@ -608,16 +848,16 @@ class RouteServiceNode(Node):
             if abs(delta_yaw) <= self._yaw_tolerance:
                 self._publish_stop()
                 self.get_logger().info(
-                    "Final yaw reached: current=%.3f target=%.3f"
-                    % (current_yaw, target_yaw)
+                    "%s reached: current=%.3f target=%.3f"
+                    % (label, current_yaw, target_yaw)
                 )
                 return True
 
             if self._yaw_timeout_sec > 0.0 and time.monotonic() > deadline:
                 self._publish_stop()
                 self.get_logger().error(
-                    "Final yaw rotation timed out: current=%.3f target=%.3f"
-                    % (current_yaw, target_yaw)
+                    "%s rotation timed out: current=%.3f target=%.3f"
+                    % (label, current_yaw, target_yaw)
                 )
                 return False
 

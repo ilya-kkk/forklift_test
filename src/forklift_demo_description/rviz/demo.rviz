@@ -225,7 +225,7 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
-        Filter size: 10
+        Filter size: 100
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /scan
@@ -259,7 +259,7 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
-        Filter size: 10
+        Filter size: 100
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /scan_rear_limited
@@ -293,7 +293,7 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
-        Filter size: 10
+        Filter size: 100
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /scan_left_limited
@@ -327,7 +327,7 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
-        Filter size: 10
+        Filter size: 100
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /scan_right_limited
@@ -361,7 +361,7 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
-        Filter size: 10
+        Filter size: 100
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /scan_up
@@ -426,6 +426,7 @@ Visualization Manager:
         json_map_labels: true
         json_map_paths: true
         json_map_points: true
+        json_map_yaw: true
       Topic:
         Depth: 5
         Durability Policy: Transient Local

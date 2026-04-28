@@ -1,6 +1,7 @@
 import json
+import math
 import threading
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 import rclpy
 from geometry_msgs.msg import Point as GeoPoint
@@ -26,7 +27,7 @@ class JsonMapVisualizerNode(Node):
         self.declare_parameter("publish_period_sec", 0.0)
         self.declare_parameter("deduplicate_bidirectional_paths", True)
         self.declare_parameter("draw_labels", True)
-        self.declare_parameter("point_scale", 0.28)
+        self.declare_parameter("point_scale", 0.14)
         self.declare_parameter("path_width", 0.045)
 
         self._map_service_name = str(self.get_parameter("map_service_name").value)
@@ -137,6 +138,7 @@ class JsonMapVisualizerNode(Node):
         points_by_id = self._index_points(map_data)
         marker_array.markers.append(self._path_marker(map_data, points_by_id))
         marker_array.markers.extend(self._point_markers(points_by_id))
+        marker_array.markers.extend(self._yaw_markers(points_by_id))
 
         if self._draw_labels:
             marker_array.markers.extend(self._label_markers(points_by_id))
@@ -191,22 +193,13 @@ class JsonMapVisualizerNode(Node):
         markers = []
         for point_id, point in sorted(points_by_id.items()):
             marker = self._base_marker("json_map_points", point_id)
-            if self._is_pallet_slot(point):
-                marker.type = Marker.CUBE
-            elif self._is_pallet_approach(point):
-                marker.type = Marker.CYLINDER
-            else:
-                marker.type = Marker.SPHERE
+            marker.type = Marker.SPHERE
             marker.action = Marker.ADD
             marker.pose.position = self._geo_point(point, z=0.12)
             marker.pose.orientation.w = 1.0
             marker.scale.x = self._point_scale
             marker.scale.y = self._point_scale
-            marker.scale.z = (
-                0.16
-                if self._is_pallet_slot(point) or self._is_pallet_approach(point)
-                else self._point_scale
-            )
+            marker.scale.z = self._point_scale
             marker.color = self._point_color(point)
             markers.append(marker)
         return markers
@@ -222,6 +215,26 @@ class JsonMapVisualizerNode(Node):
             marker.scale.z = 0.22
             marker.color = self._color(0.92, 0.96, 1.0, 0.95)
             marker.text = str(point.get("alias", point_id))
+            markers.append(marker)
+        return markers
+
+    def _yaw_markers(self, points_by_id: Dict[int, PointData]) -> List[Marker]:
+        markers = []
+        for point_id, point in sorted(points_by_id.items()):
+            yaw = self._point_yaw(point)
+            if yaw is None:
+                continue
+
+            marker = self._base_marker("json_map_yaw", point_id)
+            marker.type = Marker.ARROW
+            marker.action = Marker.ADD
+            marker.pose.orientation.w = 1.0
+            marker.points.append(self._geo_point(point, z=0.12))
+            marker.points.append(self._yaw_end_point(point, yaw, length=0.35, z=0.12))
+            marker.scale.x = 0.05
+            marker.scale.y = 0.05
+            marker.scale.z = 0.10
+            marker.color = self._point_color(point)
             markers.append(marker)
         return markers
 
@@ -246,10 +259,6 @@ class JsonMapVisualizerNode(Node):
         alias = str(point.get("alias", ""))
         if alias == "0000":
             return self._color(1.0, 0.84, 0.18, 1.0)
-        if self._is_pallet_approach(point):
-            return self._color(0.0, 0.92, 0.95, 1.0)
-        if self._is_pallet_slot(point):
-            return self._color(0.18, 0.78, 0.58, 1.0)
         return self._color(0.10, 0.48, 1.0, 1.0)
 
     def _geo_point(self, point: PointData, *, z: float) -> GeoPoint:
@@ -259,11 +268,21 @@ class JsonMapVisualizerNode(Node):
         geo_point.z = float(z)
         return geo_point
 
-    def _is_pallet_slot(self, point: PointData) -> bool:
-        return self._is_truthy(point.get("pallet_slot", False))
+    def _yaw_end_point(
+        self, point: PointData, yaw: float, *, length: float, z: float
+    ) -> GeoPoint:
+        geo_point = self._geo_point(point, z=z)
+        geo_point.x += math.cos(yaw) * length
+        geo_point.y += math.sin(yaw) * length
+        return geo_point
 
-    def _is_pallet_approach(self, point: PointData) -> bool:
-        return self._is_truthy(point.get("pallet_approach", False))
+    def _point_yaw(self, point: PointData) -> float | None:
+        if "yaw" not in point:
+            return None
+        try:
+            return float(point["yaw"])
+        except (TypeError, ValueError):
+            return None
 
     def _is_truthy(self, value: Any) -> bool:
         if isinstance(value, bool):
