@@ -112,6 +112,50 @@ flowchart LR
 - Ручной refresh визуализации карты:
   - `/robot_data/map/visualize`
 
+## Мои сервисы и связь с Nav2
+
+### `/forklift_nav/move_to` (`route_service`)
+
+- Вход: `ros2_templates/srv/StringWithJson` (ожидается id/alias целевой точки).
+- Что делает:
+  1. Запрашивает граф карты через `/robot_data/map/get_map`.
+  2. Строит путь по JSON-графу.
+  3. Для короткого пути (`< short_route_threshold_m`) делает:
+     - `Spin` (`/spin`, action `nav2_msgs/action/Spin`) в направление движения,
+     - `DriveOnHeading` (`/drive_on_heading`, action `nav2_msgs/action/DriveOnHeading`) на длину сегмента.
+  4. Для обычного пути:
+     - при необходимости делает `Spin`,
+     - отправляет `FollowPath` (`/follow_path`, action `nav2_msgs/action/FollowPath`).
+- Нав2-интеграция:
+  - `behavior_server`: `/spin`, `/drive_on_heading`
+  - `controller_server`: `/follow_path`
+  - публикует диагностический путь в `/route_path` (RViz).
+
+### `/forklift_nav/revers_move_to` (`route_service`)
+
+- Вход: `ros2_templates/srv/StringWithJson` (id/alias точки).
+- Что делает:
+  1. Строит маршрут по JSON-графу.
+  2. Делит на два этапа:
+     - prefix (передом),
+     - последний edge (задом).
+  3. На каждом этапе применяет ту же логику:
+     - коротко: `Spin + DriveOnHeading`,
+     - длинно: `Spin + FollowPath`.
+- Режим учитывается явно:
+  - `forward` для prefix,
+  - `reverse` для последнего edge (угол выравнивания и знак скорости инвертируются).
+
+### `/robot_data/route/go_to_point` (compat)
+
+- Это совместимый вход в тот же `route_service`.
+- Дальше используется тот же pipeline Nav2, что и для `move_to`.
+
+### `/robot_data/map/get_map` (`map_service`)
+
+- Отдает JSON-граф (`point`/`path`), который использует `route_service`.
+- С Nav2 напрямую не взаимодействует, но определяет геометрию маршрутов, которые потом уходят в `Spin/DriveOnHeading/FollowPath`.
+
 ## Быстрый запуск (Docker)
 
 ```bash
