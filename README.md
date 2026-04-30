@@ -101,6 +101,25 @@ flowchart LR
 - `use_sim_time` (default: `true`)
 - `world`, `x`, `y`, `yaw`
 
+## Статус steering-gate в `cmd_vel_to_motors`
+
+Сейчас механизм "не крутить колесо, пока рулевое не выровнено" отключен параметром:
+
+- `require_steering_alignment: false`
+
+Где это выставлено:
+
+- `src/forklift_demo_description/launch/sim_followpath.launch.py`
+
+Как включить обратно:
+
+1. В launch вернуть `require_steering_alignment: true`.
+2. Либо переопределить параметр при запуске ноды:
+
+```bash
+ros2 run forklift_demo_control cmd_vel_to_motors --ros-args -p require_steering_alignment:=true
+```
+
 ## Полезные сервисы
 
 - JSON карта:

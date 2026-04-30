@@ -186,6 +186,7 @@ def generate_launch_description() -> LaunchDescription:
                     "wheel_cmd_topic": "/forklift/right_wheel_cmd",
                     "drive_wheel_radius": 0.125,
                     "drive_wheel_velocity_sign": -1.0,
+                    "require_steering_alignment": False,
                 }
             ],
         ),
