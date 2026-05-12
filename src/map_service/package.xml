@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>map_service</name>
+  <version>0.1.0</version>
+  <description>Forklift JSON map provider and demo map data.</description>
+  <maintainer email="codex@example.com">Codex</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+  <depend>rclpy</depend>
+  <depend>forklift_interfaces</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -1,0 +1,14 @@
+fork_position_controller:
+  ros__parameters:
+    use_sim_time: true
+    joint_name: fork_joint
+    joint_states_topic: /joint_states
+    position_cmd_topic: /forklift/fork_cmd
+    velocity_cmd_topic: /forklift/fork_velocity_cmd
+    invert_position_command: false
+    position_lower_limit: 0.0
+    position_upper_limit: 1.0
+    max_velocity: 0.35
+    p_gain: 2.5
+    deadband: 0.002
+    publish_rate_hz: 30.0

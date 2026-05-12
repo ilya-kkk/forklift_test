@@ -1,1 +1,0 @@
-"""Forklift demo control package."""

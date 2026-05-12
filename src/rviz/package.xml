@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>rviz</name>
+  <version>0.1.0</version>
+  <description>RViz configuration and helper visualization nodes for the forklift stack.</description>
+  <maintainer email="codex@example.com">Codex</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>forklift_interfaces</depend>
+  <depend>rviz2</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

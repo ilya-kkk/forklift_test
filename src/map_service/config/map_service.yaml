@@ -1,0 +1,4 @@
+map_service:
+  ros__parameters:
+    use_sim_time: true
+    map_service_name: /robot_data/map/get_map

@@ -1,0 +1,26 @@
+route_service:
+  ros__parameters:
+    use_sim_time: true
+    map_service_name: /robot_data/map/get_map
+    route_service_name: /robot_data/route/go_to_point
+    move_to_service_name: /forklift_nav/move_to
+    revers_move_to_service_name: /forklift_nav/revers_move_to
+    follow_path_action_name: follow_path
+    spin_action_name: spin
+    drive_on_heading_action_name: drive_on_heading
+    path_topic: /route_path
+    frame_id: map
+    robot_base_frame: base_link
+    controller_id: FollowPath
+    goal_checker_id: goal_checker
+    follow_timeout_sec: 120.0
+    nearest_point_tolerance: 0.20
+    transform_timeout_sec: 1.0
+    cmd_vel_topic: /cmd_vel_raw
+    yaw_tolerance: 0.05
+    path_alignment_min_segment_length: 0.35
+    yaw_angular_speed: 0.35
+    yaw_timeout_sec: 20.0
+    yaw_control_frequency: 20.0
+    short_route_threshold_m: 1.0
+    short_route_speed_mps: 0.2

@@ -8,7 +8,7 @@ services:
     network_mode: host
     ipc: host
     environment:
-      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-73}
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
       DISPLAY: ${DISPLAY:-:0}
       QT_X11_NO_MITSHM: "1"
@@ -23,9 +23,16 @@ services:
       - ${XAUTHORITY:-/dev/null}:/tmp/.Xauthority:ro
     command: >
       bash -lc "
-      colcon build --symlink-install --packages-up-to forklift_demo_description &&
+      rm -f /ws/install/.forklift_demo_ready &&
+      rm -rf
+      /ws/build/forklift_demo /ws/install/forklift_demo
+      /ws/build/forklift_demo_control /ws/install/forklift_demo_control
+      /ws/build/forklift_demo_description /ws/install/forklift_demo_description
+      /ws/build/ros2_templates /ws/install/ros2_templates &&
+      colcon build --packages-up-to forklift_demo --cmake-force-configure &&
+      touch /ws/install/.forklift_demo_ready &&
       source /ws/install/setup.bash &&
-      ros2 launch forklift_demo_description sim_followpath.launch.py launch_rviz:=false launch_gz_gui:=true"
+      ros2 launch forklift_demo sim_followpath.launch.py launch_rviz:=false launch_gz_gui:=true"
 
   rviz:
     image: forklift_demo:jazzy
@@ -43,7 +50,7 @@ services:
       ROS_LOG_DIR: /tmp/rviz-home/.ros/log
       XDG_RUNTIME_DIR: /tmp/runtime-user
       XAUTHORITY: /tmp/.Xauthority
-      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-73}
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
     volumes:
       - .:/ws
@@ -55,11 +62,11 @@ services:
       mkdir -p /tmp/rviz-home/.ros/log &&
       mkdir -p /tmp/runtime-user &&
       chmod 700 /tmp/runtime-user &&
-      until [ -f /ws/install/setup.bash ]; do sleep 1; done &&
+      until [ -f /ws/install/.forklift_demo_ready ]; do sleep 1; done &&
       source /ws/install/setup.bash &&
       for i in $(seq 1 30); do ros2 topic echo /clock --once >/dev/null 2>&1 && break; sleep 1; done &&
       sleep 2 &&
-      ros2 run rviz2 rviz2 -d /ws/src/forklift_demo_description/rviz/demo.rviz --ros-args -p use_sim_time:=true"
+      ros2 run rviz2 rviz2 -d /ws/src/rviz/rviz/demo.rviz --ros-args -p use_sim_time:=true"
 
   rqt:
     image: forklift_demo:jazzy
@@ -77,7 +84,7 @@ services:
       ROS_LOG_DIR: /tmp/rqt-home/.ros/log
       XDG_RUNTIME_DIR: /tmp/runtime-user
       XAUTHORITY: /tmp/.Xauthority
-      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-73}
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
     volumes:
       - .:/ws
@@ -89,7 +96,7 @@ services:
       mkdir -p /tmp/rqt-home/.ros/log &&
       mkdir -p /tmp/runtime-user &&
       chmod 700 /tmp/runtime-user &&
-      until [ -f /ws/install/setup.bash ]; do sleep 1; done &&
+      until [ -f /ws/install/.forklift_demo_ready ]; do sleep 1; done &&
       source /ws/install/setup.bash &&
       ros2 run rqt_robot_steering rqt_robot_steering --ros-args
       -p default_topic:=/cmd_vel_raw
@@ -114,7 +121,7 @@ services:
       ROS_LOG_DIR: /tmp/fork-slider-home/.ros/log
       XDG_RUNTIME_DIR: /tmp/runtime-user
       XAUTHORITY: /tmp/.Xauthority
-      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-73}
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
     volumes:
       - .:/ws
@@ -126,10 +133,10 @@ services:
       mkdir -p /tmp/fork-slider-home/.ros/log &&
       mkdir -p /tmp/runtime-user &&
       chmod 700 /tmp/runtime-user &&
-      until [ -f /ws/install/setup.bash ]; do sleep 1; done &&
+      until [ -f /ws/install/.forklift_demo_ready ]; do sleep 1; done &&
       source /ws/install/setup.bash &&
       ros2 run slider_publisher slider_publisher --ros-args
-      -p config:=/ws/src/forklift_demo_description/config/fork_slider_publisher.yaml
+      -p config:=/ws/src/fork_manager/config/fork_slider_publisher.yaml
       -p rate:=20.0"
 
 volumes:

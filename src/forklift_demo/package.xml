@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>forklift_demo</name>
+  <version>0.1.0</version>
+  <description>Gazebo demo assets and launch files for the forklift stack.</description>
+  <maintainer email="codex@example.com">Codex</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+  <depend>lifecycle_msgs</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>ros_gz_bridge</depend>
+  <depend>ros_gz_sim</depend>
+  <depend>xacro</depend>
+  <depend>slam_toolbox</depend>
+  <depend>nav2_controller</depend>
+  <depend>nav2_behaviors</depend>
+  <depend>nav2_lifecycle_manager</depend>
+  <depend>nav2_collision_monitor</depend>
+  <depend>nav2_regulated_pure_pursuit_controller</depend>
+  <depend>nav2_costmap_2d</depend>
+  <depend>rviz2</depend>
+  <depend>tf2_ros</depend>
+  <depend>navigation_forklift</depend>
+  <depend>cmd_vel_to_motors</depend>
+  <depend>fork_manager</depend>
+  <depend>map_service</depend>
+  <depend>collision_monitor</depend>
+  <depend>rviz</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

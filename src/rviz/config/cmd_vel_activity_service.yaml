@@ -1,0 +1,8 @@
+cmd_vel_activity_service:
+  ros__parameters:
+    use_sim_time: true
+    wheel_velocity_topic: /forklift/right_wheel_cmd
+    moving_topic: /debug/up_lidar_marker/is_moving
+    service_name: /robot_data/marker/cmd_vel_watch/control
+    wheel_velocity_threshold: 0.0001
+    enabled: true

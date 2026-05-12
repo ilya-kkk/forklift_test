@@ -1,0 +1,10 @@
+up_lidar_marker_service:
+  ros__parameters:
+    use_sim_time: true
+    frame_id: up_lidar_link
+    marker_topic: /debug/up_lidar_marker
+    moving_topic: /debug/up_lidar_marker/is_moving
+    service_name: /robot_data/marker/up_lidar/control
+    publish_rate_hz: 10.0
+    sphere_diameter: 0.18
+    enabled: true

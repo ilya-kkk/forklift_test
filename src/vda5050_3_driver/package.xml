@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>vda5050_3_driver</name>
+  <version>0.1.0</version>
+  <description>Placeholder package reserved for future vda5050_3_driver module.</description>
+  <maintainer email="codex@example.com">Codex</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

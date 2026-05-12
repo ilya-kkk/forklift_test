@@ -1,0 +1,6 @@
+cmd_vel_twist_stamper:
+  ros__parameters:
+    use_sim_time: true
+    input_topic: /cmd_vel
+    output_topic: /cmd_vel_stamped
+    frame_id: base_link
