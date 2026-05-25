@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>apriltag_detector</name>
+  <version>0.1.0</version>
+  <description>AprilTag detector integration and service-gated camera relay for pallet picking.</description>
+  <maintainer email="codex@example.com">Codex</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>forklift_interfaces</depend>
+  <exec_depend>apriltag</exec_depend>
+  <exec_depend>apriltag_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+  <exec_depend>rclcpp_components</exec_depend>
+  <exec_depend>apriltag_ros</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

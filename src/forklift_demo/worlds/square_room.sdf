@@ -168,30 +168,30 @@
       </link>
     </model>
 
-    <include><name>pallet_b_south_00</name><uri>model://euro_pallet</uri><pose>-7.15 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_south_01</name><uri>model://euro_pallet</uri><pose>-5.85 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_south_02</name><uri>model://euro_pallet</uri><pose>-4.55 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_south_03</name><uri>model://euro_pallet</uri><pose>-3.25 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_south_04</name><uri>model://euro_pallet</uri><pose>-1.95 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_south_05</name><uri>model://euro_pallet</uri><pose>-0.65 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_south_06</name><uri>model://euro_pallet</uri><pose>0.65 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_south_07</name><uri>model://euro_pallet</uri><pose>1.95 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_south_08</name><uri>model://euro_pallet</uri><pose>3.25 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_south_09</name><uri>model://euro_pallet</uri><pose>4.55 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_south_10</name><uri>model://euro_pallet</uri><pose>5.85 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_south_11</name><uri>model://euro_pallet</uri><pose>7.15 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_south_00</name><uri>model://euro_pallet_tag36h11_00</uri><pose>-7.15 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_south_01</name><uri>model://euro_pallet_tag36h11_01</uri><pose>-5.85 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_south_02</name><uri>model://euro_pallet_tag36h11_02</uri><pose>-4.55 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_south_03</name><uri>model://euro_pallet_tag36h11_03</uri><pose>-3.25 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_south_04</name><uri>model://euro_pallet_tag36h11_04</uri><pose>-1.95 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_south_05</name><uri>model://euro_pallet_tag36h11_05</uri><pose>-0.65 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_south_06</name><uri>model://euro_pallet_tag36h11_06</uri><pose>0.65 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_south_07</name><uri>model://euro_pallet_tag36h11_07</uri><pose>1.95 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_south_08</name><uri>model://euro_pallet_tag36h11_08</uri><pose>3.25 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_south_09</name><uri>model://euro_pallet_tag36h11_09</uri><pose>4.55 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_south_10</name><uri>model://euro_pallet_tag36h11_10</uri><pose>5.85 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_south_11</name><uri>model://euro_pallet_tag36h11_11</uri><pose>7.15 0.90 0 0 0 1.57079632679</pose><static>false</static></include>
 
-    <include><name>pallet_b_north_00</name><uri>model://euro_pallet</uri><pose>-7.15 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_north_01</name><uri>model://euro_pallet</uri><pose>-5.85 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_north_02</name><uri>model://euro_pallet</uri><pose>-4.55 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_north_03</name><uri>model://euro_pallet</uri><pose>-3.25 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_north_04</name><uri>model://euro_pallet</uri><pose>-1.95 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_north_05</name><uri>model://euro_pallet</uri><pose>-0.65 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_north_06</name><uri>model://euro_pallet</uri><pose>0.65 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_north_07</name><uri>model://euro_pallet</uri><pose>1.95 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_north_09</name><uri>model://euro_pallet</uri><pose>4.55 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_north_10</name><uri>model://euro_pallet</uri><pose>5.85 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
-    <include><name>pallet_b_north_11</name><uri>model://euro_pallet</uri><pose>7.15 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_north_00</name><uri>model://euro_pallet_tag36h11_12</uri><pose>-7.15 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_north_01</name><uri>model://euro_pallet_tag36h11_13</uri><pose>-5.85 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_north_02</name><uri>model://euro_pallet_tag36h11_14</uri><pose>-4.55 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_north_03</name><uri>model://euro_pallet_tag36h11_15</uri><pose>-3.25 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_north_04</name><uri>model://euro_pallet_tag36h11_16</uri><pose>-1.95 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_north_05</name><uri>model://euro_pallet_tag36h11_17</uri><pose>-0.65 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_north_06</name><uri>model://euro_pallet_tag36h11_18</uri><pose>0.65 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_north_07</name><uri>model://euro_pallet_tag36h11_19</uri><pose>1.95 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_north_09</name><uri>model://euro_pallet_tag36h11_20</uri><pose>4.55 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_north_10</name><uri>model://euro_pallet_tag36h11_21</uri><pose>5.85 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
+    <include><name>pallet_b_north_11</name><uri>model://euro_pallet_tag36h11_22</uri><pose>7.15 6.10 0 0 0 1.57079632679</pose><static>false</static></include>
 
   </world>
 </sdf>

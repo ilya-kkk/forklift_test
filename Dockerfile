@@ -20,6 +20,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
             python3-colcon-common-extensions \
             python3-setuptools \
             ros-jazzy-navigation2 \
+            ros-jazzy-apriltag-ros \
             ros-jazzy-rmw-cyclonedds-cpp \
             ros-jazzy-rqt-robot-steering \
             ros-jazzy-slider-publisher \

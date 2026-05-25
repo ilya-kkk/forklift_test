@@ -11,6 +11,7 @@
 - `map_service` - JSON-карта и сервис `/robot_data/map/get_map`.
 - `collision_monitor` - конфиг `nav2_collision_monitor` и scan sector filters.
 - `rviz` - RViz layout и debug/visualization helper-ноды.
+- `apriltag_detector` - gated `apriltag_ros` detector для палет, конфиги тегов и генератор tagged pallet моделей.
 - `forklift_interfaces` - общие srv интерфейсы, сейчас `StringWithJson.srv`.
 - `palette_picking` - пустой резерв под picking logic.
 - `cmd_vel_arcestrator` - пустой резерв под оркестрацию velocity-команд.
@@ -54,6 +55,7 @@ docker compose up --build sim
 - Маршрут с последним ребром задом: `/forklift_nav/revers_move_to`
 - Совместимый вход: `/robot_data/route/go_to_point`
 - Refresh визуализации карты: `/robot_data/map/visualize`
+- Включение/выключение AprilTag detector: `/apriltag_detector/control`
 
 ## Steering gate
 

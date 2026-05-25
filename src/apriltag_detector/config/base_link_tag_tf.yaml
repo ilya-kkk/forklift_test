@@ -1,0 +1,58 @@
+base_link_tag_tf:
+  ros__parameters:
+    target_frame: base_link
+    publish_rate_hz: 10.0
+    transform_timeout_sec: 0.0
+    max_source_age_sec: 2.0
+    source_frames:
+      [
+        camera_pallet_b_south_00_tag,
+        camera_pallet_b_south_01_tag,
+        camera_pallet_b_south_02_tag,
+        camera_pallet_b_south_03_tag,
+        camera_pallet_b_south_04_tag,
+        camera_pallet_b_south_05_tag,
+        camera_pallet_b_south_06_tag,
+        camera_pallet_b_south_07_tag,
+        camera_pallet_b_south_08_tag,
+        camera_pallet_b_south_09_tag,
+        camera_pallet_b_south_10_tag,
+        camera_pallet_b_south_11_tag,
+        camera_pallet_b_north_00_tag,
+        camera_pallet_b_north_01_tag,
+        camera_pallet_b_north_02_tag,
+        camera_pallet_b_north_03_tag,
+        camera_pallet_b_north_04_tag,
+        camera_pallet_b_north_05_tag,
+        camera_pallet_b_north_06_tag,
+        camera_pallet_b_north_07_tag,
+        camera_pallet_b_north_09_tag,
+        camera_pallet_b_north_10_tag,
+        camera_pallet_b_north_11_tag,
+      ]
+    output_frames:
+      [
+        pallet_b_south_00_tag,
+        pallet_b_south_01_tag,
+        pallet_b_south_02_tag,
+        pallet_b_south_03_tag,
+        pallet_b_south_04_tag,
+        pallet_b_south_05_tag,
+        pallet_b_south_06_tag,
+        pallet_b_south_07_tag,
+        pallet_b_south_08_tag,
+        pallet_b_south_09_tag,
+        pallet_b_south_10_tag,
+        pallet_b_south_11_tag,
+        pallet_b_north_00_tag,
+        pallet_b_north_01_tag,
+        pallet_b_north_02_tag,
+        pallet_b_north_03_tag,
+        pallet_b_north_04_tag,
+        pallet_b_north_05_tag,
+        pallet_b_north_06_tag,
+        pallet_b_north_07_tag,
+        pallet_b_north_09_tag,
+        pallet_b_north_10_tag,
+        pallet_b_north_11_tag,
+      ]

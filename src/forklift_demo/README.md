@@ -6,7 +6,7 @@
 - `launch/sim_followpath.launch.py` - полный запуск Gazebo + Nav2 + кастомные пакеты.
 - `urdf/` - модель погрузчика и meshes.
 - `worlds/` - Gazebo world.
-- `models/` - Gazebo модели, включая euro pallet.
+- `models/` - Gazebo модели, включая euro pallet и tagged pallet variants.
 - `config/bridge_config.yaml` - `ros_gz_bridge` mapping.
 
 ## Ответственность
@@ -14,5 +14,5 @@
 - Не содержит бизнес-логику навигации, карты, моторов или вил.
 
 ## Связи
-- Запускает `navigation_forklift`, `cmd_vel_to_motors`, `fork_manager`, `map_service`, `collision_monitor`, `rviz`.
+- Запускает `navigation_forklift`, `cmd_vel_to_motors`, `fork_manager`, `map_service`, `collision_monitor`, `apriltag_detector`, `rviz`.
 - Использует Gazebo packages `ros_gz_sim` и `ros_gz_bridge`.

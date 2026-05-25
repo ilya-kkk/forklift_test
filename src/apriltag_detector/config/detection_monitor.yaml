@@ -1,0 +1,6 @@
+apriltag_detection_monitor:
+  ros__parameters:
+    detections_topic: /apriltag_detector/detections
+    no_messages_warn_sec: 5.0
+    empty_warn_sec: 5.0
+    detections_log_sec: 2.0

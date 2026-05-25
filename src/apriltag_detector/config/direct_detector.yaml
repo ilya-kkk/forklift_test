@@ -1,0 +1,43 @@
+apriltag_direct_detector:
+  ros__parameters:
+    input_image_topic: /apriltag_detector/image
+    input_camera_info_topic: /apriltag_detector/camera_info
+    detections_topic: /apriltag_detector/detections
+    target_frame: camera_link
+    family: tag36h11
+    publish_rate_hz: 5.0
+    tf_publish_rate_hz: 10.0
+    transform_timeout_sec: 0.02
+    max_hamming: 2
+    decimate: 1.0
+    blur: 0.0
+    refine_edges: true
+    debug: false
+    tag_ids: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
+    tag_frames:
+      [
+        pallet_b_south_00_tag,
+        pallet_b_south_01_tag,
+        pallet_b_south_02_tag,
+        pallet_b_south_03_tag,
+        pallet_b_south_04_tag,
+        pallet_b_south_05_tag,
+        pallet_b_south_06_tag,
+        pallet_b_south_07_tag,
+        pallet_b_south_08_tag,
+        pallet_b_south_09_tag,
+        pallet_b_south_10_tag,
+        pallet_b_south_11_tag,
+        pallet_b_north_00_tag,
+        pallet_b_north_01_tag,
+        pallet_b_north_02_tag,
+        pallet_b_north_03_tag,
+        pallet_b_north_04_tag,
+        pallet_b_north_05_tag,
+        pallet_b_north_06_tag,
+        pallet_b_north_07_tag,
+        pallet_b_north_09_tag,
+        pallet_b_north_10_tag,
+        pallet_b_north_11_tag,
+      ]
+    tag_sizes: [0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24]

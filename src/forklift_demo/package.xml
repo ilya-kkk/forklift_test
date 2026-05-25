@@ -23,6 +23,7 @@
   <depend>nav2_costmap_2d</depend>
   <depend>rviz2</depend>
   <depend>tf2_ros</depend>
+  <depend>apriltag_detector</depend>
   <depend>navigation_forklift</depend>
   <depend>cmd_vel_to_motors</depend>
   <depend>fork_manager</depend>

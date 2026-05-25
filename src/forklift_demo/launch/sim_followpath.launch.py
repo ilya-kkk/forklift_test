@@ -29,6 +29,7 @@ def generate_launch_description() -> LaunchDescription:
     map_share = get_package_share_directory("map_service")
     collision_share = get_package_share_directory("collision_monitor")
     rviz_share = get_package_share_directory("rviz")
+    apriltag_share = get_package_share_directory("apriltag_detector")
     ros_gz_sim_share = get_package_share_directory("ros_gz_sim")
 
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -69,6 +70,9 @@ def generate_launch_description() -> LaunchDescription:
         rviz_share, "config", "cmd_vel_twist_stamper.yaml"
     )
     rviz_config = os.path.join(rviz_share, "rviz", "demo.rviz")
+    apriltag_detector_launch = os.path.join(
+        apriltag_share, "launch", "apriltag_detector.launch.py"
+    )
 
     robot_description = ParameterValue(
         Command(["xacro ", robot_xacro, " use_sim_time:=", use_sim_time]),
@@ -121,6 +125,11 @@ def generate_launch_description() -> LaunchDescription:
         name="forklift_bridge",
         output="screen",
         parameters=[{"config_file": bridge_config}],
+    )
+
+    apriltag_detector = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(apriltag_detector_launch),
+        launch_arguments={"use_sim_time": use_sim_time}.items(),
     )
 
     slam_toolbox = LifecycleNode(
@@ -325,6 +334,7 @@ def generate_launch_description() -> LaunchDescription:
             AppendEnvironmentVariable("SDF_PATH", os.path.join(demo_share, "models")),
             gazebo,
             bridge,
+            apriltag_detector,
             TimerAction(period=2.0, actions=[spawn_robot]),
             *nodes,
             activate_slam_toolbox,
