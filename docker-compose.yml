@@ -32,7 +32,7 @@ services:
       colcon build --packages-up-to forklift_demo --cmake-force-configure &&
       touch /ws/install/.forklift_demo_ready &&
       source /ws/install/setup.bash &&
-      ros2 launch forklift_demo sim_followpath.launch.py launch_rviz:=false launch_gz_gui:=true"
+      ros2 launch forklift_demo sim_followpath.launch.py launch_rviz:=false launch_gz_gui:=false"
 
   rviz:
     image: forklift_demo:jazzy

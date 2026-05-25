@@ -184,9 +184,11 @@ class DirectAprilTagDetector(Node):
                 % (fx, fy),
                 throttle_duration_sec=5.0,
             )
+            self._cached_transforms.clear()
             self._detections_pub.publish(array_msg)
             return
 
+        transform_candidates: list[tuple[float, str, TransformStamped]] = []
         for detection in detections:
             tag_id = int(detection["id"])
             if tag_id not in self._tag_frames:
@@ -234,17 +236,32 @@ class DirectAprilTagDetector(Node):
                 transform_camera_tag,
             )
             if base_transform is not None:
-                self._cached_transforms[self._tag_frames[tag_id]] = base_transform
+                transform_candidates.append(
+                    (
+                        _transform_abs_xy_angle(base_transform),
+                        self._tag_frames[tag_id],
+                        base_transform,
+                    )
+                )
+
+        selected_transform = None
+        if transform_candidates:
+            _, selected_frame, selected_transform = min(
+                transform_candidates, key=lambda candidate: candidate[0]
+            )
+            self._cached_transforms = {selected_frame: selected_transform}
+        else:
+            self._cached_transforms.clear()
 
         self._detections_pub.publish(array_msg)
         self._processed_images += 1
         self._detected_tags += len(array_msg.detections)
         self.get_logger().info(
-            "direct detector processed=%d detections=%d cached_tf=%d total_tags=%d"
+            "direct detector processed=%d detections=%d selected_tf=%s total_tags=%d"
             % (
                 self._processed_images,
                 len(array_msg.detections),
-                len(self._cached_transforms),
+                selected_transform.child_frame_id if selected_transform else "none",
                 self._detected_tags,
             ),
             throttle_duration_sec=2.0,
@@ -385,6 +402,11 @@ def _point_from_xy(xy) -> Point:
     point.x = float(xy[0])
     point.y = float(xy[1])
     return point
+
+
+def _transform_abs_xy_angle(transform: TransformStamped) -> float:
+    translation = transform.transform.translation
+    return abs(float(np.arctan2(translation.y, translation.x)))
 
 
 def _rotation_matrix_x(angle: float) -> np.ndarray:

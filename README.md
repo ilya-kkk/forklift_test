@@ -39,7 +39,7 @@ flowchart LR
 ```bash
 colcon build --symlink-install --packages-up-to forklift_demo
 source install/setup.bash
-ros2 launch forklift_demo sim_followpath.launch.py launch_rviz:=false launch_gz_gui:=true
+ros2 launch forklift_demo sim_followpath.launch.py launch_rviz:=false launch_gz_gui:=false
 ```
 
 Docker:
