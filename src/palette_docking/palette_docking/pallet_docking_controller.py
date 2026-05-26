@@ -39,7 +39,7 @@ class PalletDockingController(Node):
     def __init__(self) -> None:
         super().__init__("pallet_docking_controller")
 
-        self.declare_parameter("cmd_vel_topic", "/cmd_vel_raw")
+        self.declare_parameter("cmd_vel_topic", "/cmd_vel")
         self.declare_parameter("service_name", "/palette_docking/control")
         self.declare_parameter("target_frame", "base_link")
         self.declare_parameter("tag_frame", "")
@@ -55,6 +55,7 @@ class PalletDockingController(Node):
         self.declare_parameter("dock_timeout_sec", 12.0)
         self.declare_parameter("back_out_timeout_sec", 6.0)
         self.declare_parameter("standoff_distance_m", 1.0)
+        self.declare_parameter("approach_extra_drive_m", 0.6)
         self.declare_parameter("final_drive_distance_m", 1.0)
         self.declare_parameter("back_out_distance_m", 0.45)
         self.declare_parameter("y_tolerance_m", 0.05)
@@ -112,6 +113,9 @@ class PalletDockingController(Node):
         self._default_standoff_distance = max(
             0.0, float(self.get_parameter("standoff_distance_m").value)
         )
+        self._default_approach_extra_drive = max(
+            0.0, float(self.get_parameter("approach_extra_drive_m").value)
+        )
         self._default_final_drive_distance = max(
             0.0, float(self.get_parameter("final_drive_distance_m").value)
         )
@@ -119,6 +123,7 @@ class PalletDockingController(Node):
             0.0, float(self.get_parameter("max_turn_angle_rad").value)
         )
         self._standoff_distance = self._default_standoff_distance
+        self._approach_extra_drive = self._default_approach_extra_drive
         self._final_drive_distance = self._default_final_drive_distance
         self._max_turn_angle = self._default_max_turn_angle
         self._active_tag_frame = self._configured_tag_frame
@@ -152,7 +157,9 @@ class PalletDockingController(Node):
         self._dock_linear_speed = abs(
             float(self.get_parameter("dock_linear_speed_mps").value)
         )
-        self._back_out_linear_speed = -abs(
+        # In rear-docking mode forward approach is commanded with negative linear.x,
+        # so back-out must use positive linear.x to move away from the pallet.
+        self._back_out_linear_speed = abs(
             float(self.get_parameter("back_out_linear_speed_mps").value)
         )
         self._max_angular_speed = abs(
@@ -248,6 +255,14 @@ class PalletDockingController(Node):
         self._standoff_distance = _payload_float(
             payload, "standoff_distance_m", self._default_standoff_distance
         )
+        self._approach_extra_drive = max(
+            0.0,
+            _payload_float(
+                payload,
+                "approach_extra_drive_m",
+                self._default_approach_extra_drive,
+            ),
+        )
         self._final_drive_distance = _payload_float(
             payload, "final_drive_distance_m", self._default_final_drive_distance
         )
@@ -321,7 +336,7 @@ class PalletDockingController(Node):
             return
 
         angular = self._clamp_angular(self._y_angular_gain * pose.y)
-        self._publish_twist(self._lateral_linear_speed, angular)
+        self._publish_twist(self._toward_pallet_linear(self._lateral_linear_speed), angular)
 
     def _run_align_to_tag(self, pose: PalletPose) -> None:
         if abs(pose.angle) <= self._angle_tolerance:
@@ -330,7 +345,7 @@ class PalletDockingController(Node):
             return
 
         angular = self._clamp_angular(self._angle_angular_gain * pose.angle)
-        self._publish_twist(self._align_linear_speed, angular)
+        self._publish_twist(self._toward_pallet_linear(self._align_linear_speed), angular)
 
     def _run_approach_standoff(self, pose: PalletPose) -> None:
         if abs(pose.y) > self._y_reacquire_tolerance:
@@ -338,7 +353,8 @@ class PalletDockingController(Node):
             self._publish_stop()
             return
 
-        x_error = pose.x - self._standoff_distance
+        target_x = self._standoff_distance - self._approach_extra_drive
+        x_error = pose.x - target_x
         if x_error <= self._x_tolerance:
             self._set_state(DOCK_UNDER_PALLET, "standoff reached")
             self._publish_stop()
@@ -350,7 +366,7 @@ class PalletDockingController(Node):
             self._approach_y_angular_gain * pose.y
             + self._approach_angle_angular_gain * pose.angle
         )
-        self._publish_twist(linear, angular)
+        self._publish_twist(self._toward_pallet_linear(linear), angular)
 
     def _run_final_dock(self, dt: float, pose: Optional[PalletPose]) -> None:
         if self._final_drive_traveled >= self._final_drive_distance:
@@ -363,7 +379,7 @@ class PalletDockingController(Node):
                 self._dock_y_angular_gain * pose.y
                 + self._dock_angle_angular_gain * pose.angle
             )
-        linear = self._dock_linear_speed
+        linear = self._toward_pallet_linear(self._dock_linear_speed)
         self._final_drive_traveled += abs(linear) * max(0.0, dt)
         self._publish_twist(linear, angular)
 
@@ -423,8 +439,10 @@ class PalletDockingController(Node):
             return None
 
         translation = transform.transform.translation
-        x = float(translation.x)
-        y = float(translation.y)
+        # Rear-docking mode: interpret pallet pose in a frame rotated by pi
+        # relative to base_link, so tags behind the robot become "forward".
+        x = -float(translation.x)
+        y = -float(translation.y)
         z = float(translation.z)
         return PalletPose(
             frame_id=frame_id,
@@ -487,6 +505,9 @@ class PalletDockingController(Node):
 
     def _publish_stop(self) -> None:
         self._cmd_vel_publisher.publish(Twist())
+
+    def _toward_pallet_linear(self, value: float) -> float:
+        return -abs(float(value))
 
     def _clamp_angular(self, value: float) -> float:
         return max(-self._max_angular_speed, min(self._max_angular_speed, value))

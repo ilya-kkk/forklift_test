@@ -25,6 +25,7 @@ services:
       bash -lc "
       rm -f /ws/install/.forklift_demo_ready &&
       rm -rf
+      /ws/build/apriltag_detector /ws/install/apriltag_detector
       /ws/build/forklift_demo /ws/install/forklift_demo
       /ws/build/forklift_demo_control /ws/install/forklift_demo_control
       /ws/build/forklift_demo_description /ws/install/forklift_demo_description

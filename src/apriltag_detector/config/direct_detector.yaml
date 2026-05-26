@@ -1,13 +1,14 @@
 apriltag_direct_detector:
   ros__parameters:
-    input_image_topic: /apriltag_detector/image
-    input_camera_info_topic: /apriltag_detector/camera_info
+    input_image_topic: /camera/image
+    input_camera_info_topic: /camera/camera_info
     detections_topic: /apriltag_detector/detections
     target_frame: camera_link
     family: tag36h11
     publish_rate_hz: 5.0
     tf_publish_rate_hz: 10.0
     transform_timeout_sec: 0.02
+    image_timeout_sec: 2.0
     max_hamming: 2
     decimate: 1.0
     blur: 0.0

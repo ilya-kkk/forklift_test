@@ -10,7 +10,8 @@ from apriltag_msgs.msg import AprilTagDetection, AprilTagDetectionArray, Point
 from cv_bridge import CvBridge, CvBridgeError
 from geometry_msgs.msg import TransformStamped
 from rclpy.duration import Duration
-from rclpy.node import Node
+from rclpy.logging import LoggingSeverity
+from rclpy.lifecycle import LifecycleNode, LifecycleState, TransitionCallbackReturn
 from rclpy.parameter import Parameter
 from rclpy.qos import QoSProfile
 from rclpy.time import Time
@@ -18,18 +19,20 @@ from sensor_msgs.msg import CameraInfo, Image
 from tf2_ros import Buffer, TransformBroadcaster, TransformException, TransformListener
 
 
-class DirectAprilTagDetector(Node):
+class DirectAprilTagDetector(LifecycleNode):
     def __init__(self) -> None:
         super().__init__("apriltag_direct_detector")
+        self.get_logger().set_level(LoggingSeverity.WARN)
 
-        self.declare_parameter("input_image_topic", "/apriltag_detector/image")
-        self.declare_parameter("input_camera_info_topic", "/apriltag_detector/camera_info")
+        self.declare_parameter("input_image_topic", "/camera/image")
+        self.declare_parameter("input_camera_info_topic", "/camera/camera_info")
         self.declare_parameter("detections_topic", "/apriltag_detector/detections")
         self.declare_parameter("target_frame", "camera_link")
         self.declare_parameter("family", "tag36h11")
         self.declare_parameter("publish_rate_hz", 5.0)
         self.declare_parameter("tf_publish_rate_hz", 10.0)
         self.declare_parameter("transform_timeout_sec", 0.02)
+        self.declare_parameter("image_timeout_sec", 2.0)
         self.declare_parameter("max_hamming", 2)
         self.declare_parameter("decimate", 1.0)
         self.declare_parameter("blur", 0.0)
@@ -51,6 +54,9 @@ class DirectAprilTagDetector(Node):
             0.1, float(self.get_parameter("tf_publish_rate_hz").value)
         )
         self._timeout = float(self.get_parameter("transform_timeout_sec").value)
+        self._image_timeout = max(
+            0.0, float(self.get_parameter("image_timeout_sec").value)
+        )
         self._camera_transform_rotation = _rotation_sequence(
             _rotation_matrix_y(-np.pi / 2.0),
             _rotation_matrix_x(-np.pi / 2.0),
@@ -80,7 +86,7 @@ class DirectAprilTagDetector(Node):
         self._buffer = Buffer()
         self._listener = TransformListener(self._buffer, self)
         self._broadcaster = TransformBroadcaster(self)
-        self._detections_pub = self.create_publisher(
+        self._detections_pub = self.create_lifecycle_publisher(
             AprilTagDetectionArray, detections_topic, QoSProfile(depth=10)
         )
 
@@ -88,6 +94,7 @@ class DirectAprilTagDetector(Node):
         self._latest_camera_info: CameraInfo | None = None
         self._last_processed_stamp: tuple[int, int] | None = None
         self._cached_transforms: dict[str, TransformStamped] = {}
+        self._active = False
         self._input_images = 0
         self._input_camera_infos = 0
         self._processed_images = 0
@@ -106,7 +113,8 @@ class DirectAprilTagDetector(Node):
         self.create_timer(1.0 / tf_publish_rate_hz, self._publish_cached_transforms)
 
         self.get_logger().info(
-            "apriltag_direct_detector ready: image=%s camera_info=%s detections=%s target_frame=%s tags=%d"
+            "apriltag_direct_detector lifecycle ready: image=%s camera_info=%s "
+            "detections=%s target_frame=%s tags=%d state=unconfigured"
             % (
                 input_image_topic,
                 input_camera_info_topic,
@@ -115,6 +123,47 @@ class DirectAprilTagDetector(Node):
                 len(self._tag_frames),
             )
         )
+
+    def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self._active = False
+        self._clear_detection_state()
+        result = super().on_configure(state)
+        if result == TransitionCallbackReturn.SUCCESS:
+            self.get_logger().info(
+                "apriltag_direct_detector configured; waiting for lifecycle activate"
+            )
+        return result
+
+    def on_activate(self, state: LifecycleState) -> TransitionCallbackReturn:
+        result = super().on_activate(state)
+        if result == TransitionCallbackReturn.SUCCESS:
+            self._active = True
+            self._last_processed_stamp = None
+            self.get_logger().info("apriltag_direct_detector activated")
+        return result
+
+    def on_deactivate(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self._active = False
+        self._clear_detection_state()
+        result = super().on_deactivate(state)
+        if result == TransitionCallbackReturn.SUCCESS:
+            self.get_logger().info("apriltag_direct_detector deactivated")
+        return result
+
+    def on_cleanup(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self._active = False
+        self._latest_image = None
+        self._latest_camera_info = None
+        self._clear_detection_state()
+        result = super().on_cleanup(state)
+        if result == TransitionCallbackReturn.SUCCESS:
+            self.get_logger().info("apriltag_direct_detector cleaned up")
+        return result
+
+    def on_shutdown(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self._active = False
+        self._clear_detection_state()
+        return super().on_shutdown(state)
 
     def _image_callback(self, msg: Image) -> None:
         self._latest_image = msg
@@ -148,6 +197,8 @@ class DirectAprilTagDetector(Node):
             )
 
     def _process_latest(self) -> None:
+        if not self._active:
+            return
         if self._latest_image is None or self._latest_camera_info is None:
             self.get_logger().warn(
                 "direct detector waiting for image+camera_info: images=%d camera_infos=%d"
@@ -158,6 +209,15 @@ class DirectAprilTagDetector(Node):
 
         image = self._latest_image
         camera_info = self._latest_camera_info
+        if self._image_is_stale(image):
+            self._cached_transforms.clear()
+            self.get_logger().warn(
+                "direct detector input image is stale: age=%.3fs timeout=%.3fs"
+                % (self._image_age_sec(image), self._image_timeout),
+                throttle_duration_sec=2.0,
+            )
+            return
+
         stamp_key = (image.header.stamp.sec, image.header.stamp.nanosec)
         if stamp_key == self._last_processed_stamp:
             return
@@ -386,7 +446,12 @@ class DirectAprilTagDetector(Node):
         return msg
 
     def _publish_cached_transforms(self) -> None:
+        if not self._active:
+            return
         if not self._cached_transforms:
+            return
+        if self._latest_image is None or self._image_is_stale(self._latest_image):
+            self._cached_transforms.clear()
             return
         now = self.get_clock().now().to_msg()
         transforms = []
@@ -395,6 +460,21 @@ class DirectAprilTagDetector(Node):
             updated.header.stamp = now
             transforms.append(updated)
         self._broadcaster.sendTransform(transforms)
+
+    def _image_is_stale(self, image: Image) -> bool:
+        return (
+            self._image_timeout > 0.0
+            and self._image_age_sec(image) > self._image_timeout
+        )
+
+    def _image_age_sec(self, image: Image) -> float:
+        stamp = Time.from_msg(image.header.stamp)
+        age = (self.get_clock().now() - stamp).nanoseconds / 1_000_000_000.0
+        return max(0.0, age)
+
+    def _clear_detection_state(self) -> None:
+        self._cached_transforms.clear()
+        self._last_processed_stamp = None
 
 
 def _point_from_xy(xy) -> Point:

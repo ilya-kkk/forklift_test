@@ -26,7 +26,6 @@ setup(
             "base_link_tag_tf = apriltag_detector.base_link_tag_tf:main",
             "detection_monitor = apriltag_detector.detection_monitor:main",
             "direct_detector = apriltag_detector.direct_detector:main",
-            "image_gate = apriltag_detector.image_gate:main",
         ]
     },
 )

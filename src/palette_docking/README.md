@@ -9,11 +9,10 @@
 
 - Нода: `pallet_docking_controller`
 - Сервис управления: `/palette_docking/control`
-- Выход команд скорости: `/cmd_vel_raw`
+- Выход команд скорости: `/cmd_vel`
 - Основной источник цели: TF палетного тега, например `base_link -> pallet_b_south_08_tag`
 
-Команды публикуются в `/cmd_vel_raw`, чтобы они проходили через `collision_monitor` и
-дальше попадали в `/cmd_vel` и `cmd_vel_to_motors`.
+Команды публикуются напрямую в `/cmd_vel`.
 
 ## Запуск
 
@@ -148,7 +147,8 @@ angular.z = clamp(angle_angular_gain * angle_error, +/- max_angular_speed_radps)
 Команда:
 
 ```text
-x_error   = tag.x - standoff_distance_m
+target_x  = standoff_distance_m - approach_extra_drive_m
+x_error   = tag.x - target_x
 linear.x  = clamp(approach_x_gain * x_error,
                   approach_min_linear_speed_mps,
                   approach_max_linear_speed_mps)
@@ -161,7 +161,7 @@ angular.z = clamp(approach_y_angular_gain * y_error +
 контроллер возвращается в `COMPENSATE_Y`, а не продолжает ехать вперед криво.
 
 Переходы:
-- `tag.x - standoff_distance_m <= x_tolerance_m` -> `DOCK_UNDER_PALLET`
+- `tag.x - (standoff_distance_m - approach_extra_drive_m) <= x_tolerance_m` -> `DOCK_UNDER_PALLET`
 - `abs(y_error) > y_reacquire_tolerance_m` -> `COMPENSATE_Y`
 - `abs(angle_error) > max_turn_angle_rad` -> `BACK_OUT`
 - таймаут `approach_timeout_sec` -> `BACK_OUT`
@@ -228,6 +228,9 @@ angular.z = 0.0
   пытается разворачиваться на месте и уходит в `BACK_OUT`.
 - `standoff_distance_m`: дистанция до палеты, на которой заканчивается подвод к точке
   перед палетой.
+- `approach_extra_drive_m`: дополнительный заезд на этапе `APPROACH_STANDOFF` после
+  достижения `standoff_distance_m`; позволяет сместить целевую `x`-точку глубже под палету
+  (например, на полпалеты `0.6` м).
 - `final_drive_distance_m`: фиксированная дистанция финального заезда под палету.
 - `back_out_distance_m`: дистанция отъезда назад при невозможности выполнить docking.
 - `y_tolerance_m`: допустимая боковая ошибка после компенсации.

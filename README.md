@@ -55,7 +55,7 @@ docker compose up --build sim
 - Маршрут с последним ребром задом: `/forklift_nav/revers_move_to`
 - Совместимый вход: `/robot_data/route/go_to_point`
 - Refresh визуализации карты: `/robot_data/map/visualize`
-- Включение/выключение AprilTag detector: `/apriltag_detector/control`
+- Включение AprilTag detector: `ros2 lifecycle set /apriltag_direct_detector activate`
 
 ## Steering gate
 

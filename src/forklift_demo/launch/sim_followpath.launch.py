@@ -36,6 +36,10 @@ def generate_launch_description() -> LaunchDescription:
     use_sim_time = LaunchConfiguration("use_sim_time")
     launch_rviz = LaunchConfiguration("launch_rviz")
     launch_gz_gui = LaunchConfiguration("launch_gz_gui")
+    activate_apriltag_detector = LaunchConfiguration("activate_apriltag_detector")
+    launch_apriltag_detection_monitor = LaunchConfiguration(
+        "launch_apriltag_detection_monitor"
+    )
     enable_cmd_vel_to_motors = LaunchConfiguration("enable_cmd_vel_to_motors")
     world = LaunchConfiguration("world")
     x = LaunchConfiguration("x")
@@ -133,7 +137,11 @@ def generate_launch_description() -> LaunchDescription:
 
     apriltag_detector = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(apriltag_detector_launch),
-        launch_arguments={"use_sim_time": use_sim_time}.items(),
+        launch_arguments={
+            "use_sim_time": use_sim_time,
+            "activate_detector": activate_apriltag_detector,
+            "launch_detection_monitor": launch_apriltag_detection_monitor,
+        }.items(),
     )
 
     slam_toolbox = LifecycleNode(
@@ -330,6 +338,10 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("launch_rviz", default_value="false"),
             DeclareLaunchArgument("launch_gz_gui", default_value="false"),
+            DeclareLaunchArgument("activate_apriltag_detector", default_value="false"),
+            DeclareLaunchArgument(
+                "launch_apriltag_detection_monitor", default_value="false"
+            ),
             DeclareLaunchArgument("enable_cmd_vel_to_motors", default_value="true"),
             DeclareLaunchArgument(
                 "world",

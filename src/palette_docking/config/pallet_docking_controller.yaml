@@ -1,7 +1,7 @@
 pallet_docking_controller:
   ros__parameters:
     use_sim_time: true
-    cmd_vel_topic: /cmd_vel_raw
+    cmd_vel_topic: /cmd_vel
     service_name: /palette_docking/control
     target_frame: base_link
     tag_frame: ""
@@ -42,6 +42,7 @@ pallet_docking_controller:
     dock_timeout_sec: 12.0
     back_out_timeout_sec: 6.0
     standoff_distance_m: 1.0
+    approach_extra_drive_m: 0.6
     final_drive_distance_m: 1.0
     back_out_distance_m: 0.45
     y_tolerance_m: 0.05
