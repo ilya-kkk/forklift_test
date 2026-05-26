@@ -13,7 +13,7 @@
 - `rviz` - RViz layout и debug/visualization helper-ноды.
 - `apriltag_detector` - gated `apriltag_ros` detector для палет, конфиги тегов и генератор tagged pallet моделей.
 - `forklift_interfaces` - общие srv интерфейсы, сейчас `StringWithJson.srv`.
-- `palette_picking` - пустой резерв под picking logic.
+- `palette_docking` - поэтапный заезд к палете из pre-picking позиции по TF тега.
 - `cmd_vel_arcestrator` - пустой резерв под оркестрацию velocity-команд.
 - `vda5050_3_driver` - пустой резерв под VDA5050 v3 integration.
 

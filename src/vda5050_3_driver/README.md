@@ -7,4 +7,4 @@
 
 ## Планируемая ответственность
 - Интеграция с VDA5050 order/state/instant actions.
-- Маппинг внешних order-команд в `navigation_forklift`, `fork_manager`, `palette_picking`.
+- Маппинг внешних order-команд в `navigation_forklift`, `fork_manager`, `palette_docking`.

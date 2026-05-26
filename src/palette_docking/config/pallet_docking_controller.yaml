@@ -1,0 +1,65 @@
+pallet_docking_controller:
+  ros__parameters:
+    use_sim_time: true
+    cmd_vel_topic: /cmd_vel_raw
+    service_name: /palette_docking/control
+    target_frame: base_link
+    tag_frame: ""
+    tag_frame_candidates:
+      [
+        pallet_b_south_00_tag,
+        pallet_b_south_01_tag,
+        pallet_b_south_02_tag,
+        pallet_b_south_03_tag,
+        pallet_b_south_04_tag,
+        pallet_b_south_05_tag,
+        pallet_b_south_06_tag,
+        pallet_b_south_07_tag,
+        pallet_b_south_08_tag,
+        pallet_b_south_09_tag,
+        pallet_b_south_10_tag,
+        pallet_b_south_11_tag,
+        pallet_b_north_00_tag,
+        pallet_b_north_01_tag,
+        pallet_b_north_02_tag,
+        pallet_b_north_03_tag,
+        pallet_b_north_04_tag,
+        pallet_b_north_05_tag,
+        pallet_b_north_06_tag,
+        pallet_b_north_07_tag,
+        pallet_b_north_09_tag,
+        pallet_b_north_10_tag,
+        pallet_b_north_11_tag,
+      ]
+    control_rate_hz: 20.0
+    start_enabled: false
+    lookup_timeout_sec: 0.02
+    tag_timeout_sec: 0.5
+    wait_for_tag_timeout_sec: 5.0
+    compensate_y_timeout_sec: 10.0
+    align_timeout_sec: 8.0
+    approach_timeout_sec: 15.0
+    dock_timeout_sec: 12.0
+    back_out_timeout_sec: 6.0
+    standoff_distance_m: 1.0
+    final_drive_distance_m: 1.0
+    back_out_distance_m: 0.45
+    y_tolerance_m: 0.05
+    y_reacquire_tolerance_m: 0.12
+    angle_tolerance_rad: 0.04
+    x_tolerance_m: 0.05
+    max_turn_angle_rad: 0.75
+    lateral_linear_speed_mps: 0.12
+    align_linear_speed_mps: 0.0
+    approach_max_linear_speed_mps: 0.25
+    approach_min_linear_speed_mps: 0.06
+    dock_linear_speed_mps: 0.16
+    back_out_linear_speed_mps: -0.12
+    max_angular_speed_radps: 0.45
+    y_angular_gain: 0.8
+    angle_angular_gain: 1.2
+    approach_x_gain: 0.5
+    approach_y_angular_gain: 0.35
+    approach_angle_angular_gain: 0.8
+    dock_y_angular_gain: 0.0
+    dock_angle_angular_gain: 0.0

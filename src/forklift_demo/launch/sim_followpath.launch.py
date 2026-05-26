@@ -30,6 +30,7 @@ def generate_launch_description() -> LaunchDescription:
     collision_share = get_package_share_directory("collision_monitor")
     rviz_share = get_package_share_directory("rviz")
     apriltag_share = get_package_share_directory("apriltag_detector")
+    palette_docking_share = get_package_share_directory("palette_docking")
     ros_gz_sim_share = get_package_share_directory("ros_gz_sim")
 
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -72,6 +73,9 @@ def generate_launch_description() -> LaunchDescription:
     rviz_config = os.path.join(rviz_share, "rviz", "demo.rviz")
     apriltag_detector_launch = os.path.join(
         apriltag_share, "launch", "apriltag_detector.launch.py"
+    )
+    pallet_docking_params = os.path.join(
+        palette_docking_share, "config", "pallet_docking_controller.yaml"
     )
 
     robot_description = ParameterValue(
@@ -247,6 +251,13 @@ def generate_launch_description() -> LaunchDescription:
             name="map_service",
             output="screen",
             parameters=[map_params, {"use_sim_time": use_sim_time}],
+        ),
+        Node(
+            package="palette_docking",
+            executable="pallet_docking_controller",
+            name="pallet_docking_controller",
+            output="screen",
+            parameters=[pallet_docking_params, {"use_sim_time": use_sim_time}],
         ),
         Node(
             package="rviz",
