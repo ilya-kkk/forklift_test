@@ -1,0 +1,14 @@
+cmd_vel_arcestrator:
+  ros__parameters:
+    use_sim_time: true
+    output_topic: /cmd_vel
+    control_service: /cmd_vel_arcestrator/control
+    status_topic: /cmd_vel_arcestrator/status
+    publish_rate_hz: 30.0
+    source_timeout_sec: 0.25
+    status_publish_period_sec: 1.0
+
+    pallet_docking_topic: /cmd_vel_pallet_docking
+    charging_docking_topic: /cmd_vel_charging_docking
+    manual_topic: /cmd_vel_manual
+    navigation_topic: /cmd_vel_nav

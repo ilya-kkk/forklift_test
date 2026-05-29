@@ -47,7 +47,7 @@ class RouteServiceNode(Node):
         self.declare_parameter("follow_timeout_sec", 120.0)
         self.declare_parameter("nearest_point_tolerance", 0.20)
         self.declare_parameter("transform_timeout_sec", 1.0)
-        self.declare_parameter("cmd_vel_topic", "/cmd_vel_raw")
+        self.declare_parameter("cmd_vel_topic", "/cmd_vel_nav_raw")
         self.declare_parameter("yaw_tolerance", 0.05)
         self.declare_parameter("path_alignment_min_segment_length", 0.35)
         self.declare_parameter("yaw_angular_speed", 0.35)

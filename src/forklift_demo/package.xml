@@ -26,6 +26,7 @@
   <depend>apriltag_detector</depend>
   <depend>palette_docking</depend>
   <depend>navigation_forklift</depend>
+  <depend>cmd_vel_arcestrator</depend>
   <depend>cmd_vel_to_motors</depend>
   <depend>fork_manager</depend>
   <depend>map_service</depend>

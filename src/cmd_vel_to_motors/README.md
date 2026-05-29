@@ -13,6 +13,6 @@
 - Поддерживает режимы движения `BODY_FIRST` и `FORKS_FIRST`.
 
 ## Связи
-- Получает `/cmd_vel` после `collision_monitor`.
+- Получает `/cmd_vel` после `cmd_vel_arcestrator`.
 - Получает `/joint_states` для текущего угла рулевого joint.
 - В демо команды уходят через `ros_gz_bridge` в Gazebo; на реальном роботе должны идти в hardware driver.

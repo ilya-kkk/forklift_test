@@ -24,6 +24,7 @@ from lifecycle_msgs.msg import Transition
 def generate_launch_description() -> LaunchDescription:
     demo_share = get_package_share_directory("forklift_demo")
     navigation_share = get_package_share_directory("navigation_forklift")
+    arcestrator_share = get_package_share_directory("cmd_vel_arcestrator")
     motors_share = get_package_share_directory("cmd_vel_to_motors")
     fork_share = get_package_share_directory("fork_manager")
     map_share = get_package_share_directory("map_service")
@@ -50,6 +51,9 @@ def generate_launch_description() -> LaunchDescription:
     bridge_config = os.path.join(demo_share, "config", "bridge_config.yaml")
     nav2_params = os.path.join(navigation_share, "config", "nav2_params.yaml")
     route_params = os.path.join(navigation_share, "config", "route_service.yaml")
+    cmd_vel_arcestrator_params = os.path.join(
+        arcestrator_share, "config", "cmd_vel_arcestrator.yaml"
+    )
     slam_params = os.path.join(navigation_share, "config", "slam_toolbox.yaml")
     cmd_vel_to_motors_params = os.path.join(
         motors_share, "config", "cmd_vel_to_motors.yaml"
@@ -173,7 +177,7 @@ def generate_launch_description() -> LaunchDescription:
             name="controller_server",
             output="screen",
             parameters=[nav2_params, {"use_sim_time": use_sim_time}],
-            remappings=[("/cmd_vel", "/cmd_vel_raw")],
+            remappings=[("/cmd_vel", "/cmd_vel_nav_raw")],
         ),
         Node(
             package="nav2_behaviors",
@@ -181,7 +185,7 @@ def generate_launch_description() -> LaunchDescription:
             name="behavior_server",
             output="screen",
             parameters=[nav2_params, {"use_sim_time": use_sim_time}],
-            remappings=[("/cmd_vel", "/cmd_vel_raw")],
+            remappings=[("/cmd_vel", "/cmd_vel_nav_raw")],
         ),
         Node(
             package="nav2_collision_monitor",
@@ -203,6 +207,13 @@ def generate_launch_description() -> LaunchDescription:
             name="route_service",
             output="screen",
             parameters=[route_params, {"use_sim_time": use_sim_time}],
+        ),
+        Node(
+            package="cmd_vel_arcestrator",
+            executable="cmd_vel_arcestrator",
+            name="cmd_vel_arcestrator",
+            output="screen",
+            parameters=[cmd_vel_arcestrator_params, {"use_sim_time": use_sim_time}],
         ),
         Node(
             package="cmd_vel_to_motors",

@@ -19,4 +19,5 @@
 - Зависит от `forklift_interfaces/StringWithJson`.
 - Публикует `/route_path` для RViz.
 - Использует TF `map -> base_link`.
-- Выходные скорости Nav2 идут дальше в `collision_monitor` и `cmd_vel_to_motors`.
+- Выходные скорости Nav2/route_service идут в `/cmd_vel_nav_raw`, затем через
+  `collision_monitor` в `/cmd_vel_nav` и дальше в `cmd_vel_arcestrator`.

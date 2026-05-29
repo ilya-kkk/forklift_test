@@ -10,12 +10,11 @@
 - Нода: `pallet_docking_controller`
 - Сервис управления: `/palette_docking/control`
 - Тип сервиса: `forklift_interfaces/srv/StringWithJson`
-- Выход команд скорости: `/cmd_vel`
+- Выход команд скорости: `/cmd_vel_pallet_docking`
 - Основной источник цели: TF палетного тега, например `base_link -> pallet_b_south_08_tag`
 
-Команды публикуются напрямую в `/cmd_vel`. Если в системе есть `collision_monitor` или
-арбитратор скоростей, они не будут фильтровать команды docking, пока не подписаны на тот
-же топик.
+Команды публикуются в отдельный docking-вход. В общем demo launch этот вход выбирает
+`cmd_vel_arcestrator`; через `collision_monitor` проходит только navigation-выход.
 
 ## Система координат
 
@@ -292,7 +291,7 @@ angular.z = 0.0
 
 ## Основные параметры
 
-- `cmd_vel_topic`: топик публикации скорости, сейчас `/cmd_vel`.
+- `cmd_vel_topic`: топик публикации скорости, сейчас `/cmd_vel_pallet_docking`.
 - `target_frame`: frame, в котором контроллер считает `x`, `y` и `angle`, обычно `base_link`.
 - `tag_frame`: конкретный тег; пустая строка включает авто-выбор из `tag_frame_candidates`.
 - `tag_timeout_sec`: максимальный возраст TF тега.

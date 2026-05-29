@@ -16,7 +16,7 @@ route_service:
     follow_timeout_sec: 120.0
     nearest_point_tolerance: 0.20
     transform_timeout_sec: 1.0
-    cmd_vel_topic: /cmd_vel_raw
+    cmd_vel_topic: /cmd_vel_nav_raw
     yaw_tolerance: 0.05
     path_alignment_min_segment_length: 0.35
     yaw_angular_speed: 0.35

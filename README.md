@@ -14,7 +14,7 @@
 - `apriltag_detector` - gated `apriltag_ros` detector для палет, конфиги тегов и генератор tagged pallet моделей.
 - `forklift_interfaces` - общие srv интерфейсы, сейчас `StringWithJson.srv`.
 - `palette_docking` - поэтапный заезд к палете из pre-picking позиции по TF тега.
-- `cmd_vel_arcestrator` - пустой резерв под оркестрацию velocity-команд.
+- `cmd_vel_arcestrator` - выбор активного источника velocity-команд.
 - `vda5050_3_driver` - пустой резерв под VDA5050 v3 integration.
 
 В каждом пакете есть свой `README.md` с ответственностью, составом и связями.
@@ -27,8 +27,10 @@ flowchart LR
   RS -->|/robot_data/map/get_map| MS[map_service]
   RS -->|/route_path| RV[rviz]
   RS -->|FollowPath / Spin / DriveOnHeading| N2[Nav2]
-  N2 -->|/cmd_vel_raw| CM[collision_monitor]
-  CM -->|/cmd_vel| CVM[cmd_vel_to_motors]
+  N2 -->|/cmd_vel_nav_raw| CM[collision_monitor]
+  CM -->|/cmd_vel_nav| AR[cmd_vel_arcestrator]
+  PD[palette_docking] -->|/cmd_vel_pallet_docking| AR
+  AR -->|/cmd_vel| CVM[cmd_vel_to_motors]
   CVM -->|steering/wheel commands| HW[Gazebo or hardware driver]
   FM[fork_manager] -->|/forklift/fork_velocity_cmd| HW
   MS -->|JSON map| RV
