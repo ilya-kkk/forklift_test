@@ -479,7 +479,7 @@ class RouteServiceNode(Node):
         drive_result = self._send_action_goal_and_wait(
             self._drive_on_heading_client,
             drive_goal,
-            timeout_sec=self._yaw_timeout_sec if self._yaw_timeout_sec > 0.0 else 20.0,
+            timeout_sec=self._yaw_timeout_sec,
         )
         if drive_result is None:
             self.get_logger().error("DriveOnHeading action failed or timed out")
@@ -526,7 +526,7 @@ class RouteServiceNode(Node):
         spin_result = self._send_action_goal_and_wait(
             self._spin_client,
             spin_goal,
-            timeout_sec=self._yaw_timeout_sec if self._yaw_timeout_sec > 0.0 else 20.0,
+            timeout_sec=self._yaw_timeout_sec,
         )
         if spin_result is None:
             self.get_logger().error("Spin action failed or timed out")

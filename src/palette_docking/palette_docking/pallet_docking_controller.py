@@ -48,6 +48,7 @@ class PalletDockingController(Node):
         self.declare_parameter("start_enabled", False)
         self.declare_parameter("lookup_timeout_sec", 0.02)
         self.declare_parameter("tag_timeout_sec", 0.5)
+        self.declare_parameter("diagnostic_log_period_sec", 1.0)
         self.declare_parameter("wait_for_tag_timeout_sec", 5.0)
         self.declare_parameter("compensate_y_timeout_sec", 10.0)
         self.declare_parameter("align_timeout_sec", 8.0)
@@ -60,7 +61,7 @@ class PalletDockingController(Node):
         self.declare_parameter("back_out_distance_m", 0.45)
         self.declare_parameter("y_tolerance_m", 0.05)
         self.declare_parameter("y_reacquire_tolerance_m", 0.12)
-        self.declare_parameter("angle_tolerance_rad", 0.04)
+        self.declare_parameter("angle_tolerance_rad", 0.01)
         self.declare_parameter("x_tolerance_m", 0.05)
         self.declare_parameter("max_turn_angle_rad", 0.75)
         self.declare_parameter("lateral_linear_speed_mps", 0.12)
@@ -92,6 +93,9 @@ class PalletDockingController(Node):
         )
         self._tag_timeout = max(
             0.0, float(self.get_parameter("tag_timeout_sec").value)
+        )
+        self._diagnostic_log_period = max(
+            0.0, float(self.get_parameter("diagnostic_log_period_sec").value)
         )
         self._wait_for_tag_timeout = max(
             0.0, float(self.get_parameter("wait_for_tag_timeout_sec").value)
@@ -195,6 +199,8 @@ class PalletDockingController(Node):
         self._back_out_traveled = 0.0
         self._failure_reason = ""
         self._last_pose: Optional[PalletPose] = None
+        self._last_diagnostic_log_at: Optional[Time] = None
+        self._last_diagnostic_log_key = ""
 
         rate = max(1.0, float(self.get_parameter("control_rate_hz").value))
         self.create_timer(1.0 / rate, self._control_tick)
@@ -276,6 +282,27 @@ class PalletDockingController(Node):
         ).strip()
         self._failure_reason = ""
         self._last_pose = None
+        target_x = self._standoff_distance - self._approach_extra_drive
+        self.get_logger().info(
+            "palette docking start params: tag=%s standoff=%.3f approach_extra=%.3f "
+            "target_x=%.3f final_drive=%.3f back_out=%.3f y_tol=%.3f "
+            "y_reacquire_tol=%.3f angle_tol=%.4f rad (%.2f deg) x_tol=%.3f "
+            "max_turn=%.3f rad"
+            % (
+                self._active_tag_frame or "<auto>",
+                self._standoff_distance,
+                self._approach_extra_drive,
+                target_x,
+                self._final_drive_distance,
+                self._back_out_distance,
+                self._y_tolerance,
+                self._y_reacquire_tolerance,
+                self._angle_tolerance,
+                math.degrees(self._angle_tolerance),
+                self._x_tolerance,
+                self._max_turn_angle,
+            )
+        )
         self._set_state(WAIT_FOR_TAG, "control start")
 
     def _control_tick(self) -> None:
@@ -293,15 +320,21 @@ class PalletDockingController(Node):
         pose = self._lookup_pallet_pose()
         if pose is None:
             self._publish_stop()
+            if self._state == DOCK_UNDER_PALLET:
+                self._run_final_dock(dt, None)
+                return
+            self._log_diagnostic(
+                "tag_lost",
+                "state=%s no valid tag transform %s"
+                % (self._state, self._state_timing_text(now)),
+                now,
+            )
             if self._state == WAIT_FOR_TAG:
                 if (
                     self._wait_for_tag_timeout > 0.0
                     and self._state_elapsed(now) > self._wait_for_tag_timeout
                 ):
                     self._fail("no valid tag transform")
-                return
-            if self._state == DOCK_UNDER_PALLET:
-                self._run_final_dock(dt, None)
                 return
             if self._state_timed_out(now):
                 self._begin_back_out("tag transform lost in %s" % self._state)
@@ -314,7 +347,10 @@ class PalletDockingController(Node):
             return
 
         if self._state_timed_out(now):
-            self._begin_back_out("state timeout in %s" % self._state)
+            self._begin_back_out(
+                "state timeout in %s: %s %s"
+                % (self._state, self._pose_text(pose), self._state_timing_text(now))
+            )
             return
 
         if self._state != DOCK_UNDER_PALLET and not self._turn_is_allowed(pose):
@@ -331,32 +367,85 @@ class PalletDockingController(Node):
 
     def _run_compensate_y(self, pose: PalletPose) -> None:
         if abs(pose.y) <= self._y_tolerance:
-            self._set_state(ALIGN_TO_TAG, "y compensated")
+            self._set_state(
+                ALIGN_TO_TAG,
+                "y compensated: y=%.3f tol=%.3f angle=%.4f rad"
+                % (pose.y, self._y_tolerance, pose.angle),
+            )
             self._publish_stop()
             return
 
         angular = self._clamp_angular(self._y_angular_gain * pose.y)
-        self._publish_twist(self._toward_pallet_linear(self._lateral_linear_speed), angular)
+        linear = self._toward_pallet_linear(self._lateral_linear_speed)
+        self._log_diagnostic(
+            "compensate_y",
+            "state=%s %s y_error=%.3f y_tol=%.3f angle=%.4f rad (%.2f deg) "
+            "cmd_linear=%.3f cmd_angular=%.3f %s"
+            % (
+                self._state,
+                self._pose_text(pose),
+                pose.y,
+                self._y_tolerance,
+                pose.angle,
+                math.degrees(pose.angle),
+                linear,
+                angular,
+                self._state_timing_text(),
+            ),
+        )
+        self._publish_twist(linear, angular)
 
     def _run_align_to_tag(self, pose: PalletPose) -> None:
         if abs(pose.angle) <= self._angle_tolerance:
-            self._set_state(APPROACH_STANDOFF, "angle aligned")
+            self._set_state(
+                APPROACH_STANDOFF,
+                "angle aligned: angle=%.4f rad (%.2f deg) tol=%.4f rad"
+                % (
+                    pose.angle,
+                    math.degrees(pose.angle),
+                    self._angle_tolerance,
+                ),
+            )
             self._publish_stop()
             return
 
         angular = self._clamp_angular(self._angle_angular_gain * pose.angle)
-        self._publish_twist(self._toward_pallet_linear(self._align_linear_speed), angular)
+        linear = self._toward_pallet_linear(self._align_linear_speed)
+        self._log_diagnostic(
+            "align_to_tag",
+            "state=%s %s angle_error=%.4f rad (%.2f deg) angle_tol=%.4f rad "
+            "cmd_linear=%.3f cmd_angular=%.3f %s"
+            % (
+                self._state,
+                self._pose_text(pose),
+                pose.angle,
+                math.degrees(pose.angle),
+                self._angle_tolerance,
+                linear,
+                angular,
+                self._state_timing_text(),
+            ),
+        )
+        self._publish_twist(linear, angular)
 
     def _run_approach_standoff(self, pose: PalletPose) -> None:
         if abs(pose.y) > self._y_reacquire_tolerance:
-            self._set_state(COMPENSATE_Y, "y drifted during approach")
+            self._set_state(
+                COMPENSATE_Y,
+                "y drifted during approach: y=%.3f reacquire_tol=%.3f"
+                % (pose.y, self._y_reacquire_tolerance),
+            )
             self._publish_stop()
             return
 
         target_x = self._standoff_distance - self._approach_extra_drive
         x_error = pose.x - target_x
         if x_error <= self._x_tolerance:
-            self._set_state(DOCK_UNDER_PALLET, "standoff reached")
+            self._set_state(
+                DOCK_UNDER_PALLET,
+                "standoff reached: x=%.3f target_x=%.3f x_error=%.3f tol=%.3f"
+                % (pose.x, target_x, x_error, self._x_tolerance),
+            )
             self._publish_stop()
             return
 
@@ -366,7 +455,24 @@ class PalletDockingController(Node):
             self._approach_y_angular_gain * pose.y
             + self._approach_angle_angular_gain * pose.angle
         )
-        self._publish_twist(self._toward_pallet_linear(linear), angular)
+        linear = self._toward_pallet_linear(linear)
+        self._log_diagnostic(
+            "approach_standoff",
+            "state=%s %s target_x=%.3f x_error=%.3f x_tol=%.3f "
+            "y_reacquire_tol=%.3f cmd_linear=%.3f cmd_angular=%.3f %s"
+            % (
+                self._state,
+                self._pose_text(pose),
+                target_x,
+                x_error,
+                self._x_tolerance,
+                self._y_reacquire_tolerance,
+                linear,
+                angular,
+                self._state_timing_text(),
+            ),
+        )
+        self._publish_twist(linear, angular)
 
     def _run_final_dock(self, dt: float, pose: Optional[PalletPose]) -> None:
         if self._final_drive_traveled >= self._final_drive_distance:
@@ -381,6 +487,22 @@ class PalletDockingController(Node):
             )
         linear = self._toward_pallet_linear(self._dock_linear_speed)
         self._final_drive_traveled += abs(linear) * max(0.0, dt)
+        pose_text = self._pose_text(pose) if pose is not None else "tag=<lost>"
+        self._log_diagnostic(
+            "dock_under_pallet",
+            "state=%s %s final_drive=%.3f/%.3f dt=%.3f cmd_linear=%.3f "
+            "cmd_angular=%.3f %s"
+            % (
+                self._state,
+                pose_text,
+                self._final_drive_traveled,
+                self._final_drive_distance,
+                dt,
+                linear,
+                angular,
+                self._state_timing_text(),
+            ),
+        )
         self._publish_twist(linear, angular)
 
     def _run_back_out(self, dt: float) -> None:
@@ -392,6 +514,20 @@ class PalletDockingController(Node):
             return
 
         self._back_out_traveled += abs(self._back_out_linear_speed) * max(0.0, dt)
+        self._log_diagnostic(
+            "back_out",
+            "state=%s back_out=%.3f/%.3f dt=%.3f cmd_linear=%.3f "
+            "failure_reason=%s %s"
+            % (
+                self._state,
+                self._back_out_traveled,
+                self._back_out_distance,
+                dt,
+                self._back_out_linear_speed,
+                self._failure_reason or "<empty>",
+                self._state_timing_text(),
+            ),
+        )
         self._publish_twist(self._back_out_linear_speed, 0.0)
 
     def _lookup_pallet_pose(self) -> Optional[PalletPose]:
@@ -483,6 +619,8 @@ class PalletDockingController(Node):
         )
         self._state = state
         self._state_started_at = self.get_clock().now()
+        self._last_diagnostic_log_at = None
+        self._last_diagnostic_log_key = ""
         if state == DOCK_UNDER_PALLET:
             self._final_drive_traveled = 0.0
         if state == BACK_OUT:
@@ -496,6 +634,51 @@ class PalletDockingController(Node):
     def _state_timed_out(self, now: Time) -> bool:
         timeout = self._state_timeouts.get(self._state, 0.0)
         return timeout > 0.0 and self._state_elapsed(now) > timeout
+
+    def _state_timing_text(self, now: Optional[Time] = None) -> str:
+        now = now if now is not None else self.get_clock().now()
+        elapsed = self._state_elapsed(now)
+        timeout = self._wait_for_tag_timeout if self._state == WAIT_FOR_TAG else (
+            self._state_timeouts.get(self._state, 0.0)
+        )
+        if timeout <= 0.0:
+            return "elapsed=%.2fs timeout=off" % elapsed
+        return "elapsed=%.2fs timeout=%.2fs remaining=%.2fs" % (
+            elapsed,
+            timeout,
+            max(0.0, timeout - elapsed),
+        )
+
+    def _pose_text(self, pose: PalletPose) -> str:
+        return (
+            "tag=%s x=%.3f y=%.3f z=%.3f angle=%.4f rad (%.2f deg) age=%.3fs"
+            % (
+                pose.frame_id,
+                pose.x,
+                pose.y,
+                pose.z,
+                pose.angle,
+                math.degrees(pose.angle),
+                pose.age_sec,
+            )
+        )
+
+    def _log_diagnostic(
+        self, key: str, message: str, now: Optional[Time] = None
+    ) -> None:
+        if self._diagnostic_log_period <= 0.0:
+            return
+        now = now if now is not None else self.get_clock().now()
+        if (
+            self._last_diagnostic_log_key == key
+            and self._last_diagnostic_log_at is not None
+            and self._seconds_since(self._last_diagnostic_log_at, now)
+            < self._diagnostic_log_period
+        ):
+            return
+        self._last_diagnostic_log_key = key
+        self._last_diagnostic_log_at = now
+        self.get_logger().info("palette docking diagnostic: %s" % message)
 
     def _publish_twist(self, linear_x: float, angular_z: float) -> None:
         twist = Twist()
@@ -534,8 +717,10 @@ class PalletDockingController(Node):
             "target_frame": self._target_frame,
             "tag_frame": self._active_tag_frame or "",
             "standoff_distance_m": self._standoff_distance,
+            "approach_extra_drive_m": self._approach_extra_drive,
             "final_drive_distance_m": self._final_drive_distance,
             "max_turn_angle_rad": self._max_turn_angle,
+            "diagnostic_log_period_sec": self._diagnostic_log_period,
             "final_drive_traveled_m": self._final_drive_traveled,
             "back_out_traveled_m": self._back_out_traveled,
             "failure_reason": self._failure_reason,

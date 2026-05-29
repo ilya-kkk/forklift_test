@@ -337,7 +337,7 @@ def generate_launch_description() -> LaunchDescription:
         [
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("launch_rviz", default_value="false"),
-            DeclareLaunchArgument("launch_gz_gui", default_value="false"),
+            DeclareLaunchArgument("launch_gz_gui", default_value="true"),
             DeclareLaunchArgument("activate_apriltag_detector", default_value="false"),
             DeclareLaunchArgument(
                 "launch_apriltag_detection_monitor", default_value="false"

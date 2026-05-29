@@ -6,7 +6,7 @@ Panels:
       Expanded:
         - /CmdVelStamped1/Topic1
       Splitter Ratio: 0.5
-    Tree Height: 579
+    Tree Height: 275
   - Class: nav2_rviz_plugins/Navigation 2
     Name: Navigation 2
 Visualization Manager:
@@ -622,7 +622,7 @@ Visualization Manager:
         Value: /cmd_vel_stamped
       Value: true
     - Class: rviz_default_plugins/Image
-      Enabled: false
+      Enabled: true
       Max Value: 1
       Median window: 5
       Min Value: 0
@@ -634,7 +634,7 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /camera/image
-      Value: false
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 34; 39; 46
@@ -657,37 +657,37 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 9.8839111328125
+      Distance: 4.590128421783447
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 3.4453110694885254
-        Y: 3.1193575859069824
-        Z: 1.8431669473648071
+        X: 2.9849424362182617
+        Y: 2.4389162063598633
+        Z: 2.0275065898895264
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.6800000071525574
+      Pitch: 1.2249996662139893
       Target Frame: map
       Value: Orbit (rviz_default_plugins)
-      Yaw: 1.1299997568130493
+      Yaw: 1.5799996852874756
     Saved: ~
 Window Geometry:
   Displays:
-    collapsed: true
-  Height: 1131
-  Hide Left Dock: true
+    collapsed: false
+  Height: 1043
+  Hide Left Dock: false
   Hide Right Dock: false
   Image:
-    collapsed: true
+    collapsed: false
   Navigation 2:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd00000001000000000000018d00000415fc0200000005fb0000001e0046006f0072006b00430061006d0065007200610049006d006100670065000000003b000000af0000000000000000fb000000100044006900730070006c006100790073000000003b000002c4000000c700fffffffb00000018004e0061007600690067006100740069006f006e0020003200000001b7000001c7000001c700fffffffb0000000a0049006d00610067006500000003050000014b0000001600fffffffb0000000a0049006d00610067006501000002e10000016f00000000000000000000039f0000041500000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
-  Width: 927
-  X: 66
-  Y: 32
+  QMainWindow State: 000000ff00000000fd00000001000000000000018d000003bdfc0200000005fb0000001e0046006f0072006b00430061006d0065007200610049006d006100670065000000003b000000af0000000000000000fb000000100044006900730070006c006100790073010000003b00000194000000c700fffffffb00000018004e0061007600690067006100740069006f006e0020003200000001b7000001c7000001c700fffffffb0000000a0049006d00610067006501000001d5000002230000001600fffffffb0000000a0049006d00610067006501000002e10000016f0000000000000000000005ed000003bd00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Width: 1920
+  X: 0
+  Y: 0
