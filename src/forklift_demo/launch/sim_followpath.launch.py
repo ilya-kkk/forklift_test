@@ -25,6 +25,7 @@ def generate_launch_description() -> LaunchDescription:
     demo_share = get_package_share_directory("forklift_demo")
     navigation_share = get_package_share_directory("navigation_forklift")
     arcestrator_share = get_package_share_directory("cmd_vel_arcestrator")
+    robot_control_share = get_package_share_directory("robot_control_core")
     motors_share = get_package_share_directory("cmd_vel_to_motors")
     fork_share = get_package_share_directory("fork_manager")
     map_share = get_package_share_directory("map_service")
@@ -53,6 +54,9 @@ def generate_launch_description() -> LaunchDescription:
     route_params = os.path.join(navigation_share, "config", "route_service.yaml")
     cmd_vel_arcestrator_params = os.path.join(
         arcestrator_share, "config", "cmd_vel_arcestrator.yaml"
+    )
+    robot_control_params = os.path.join(
+        robot_control_share, "config", "robot_control_core.yaml"
     )
     slam_params = os.path.join(navigation_share, "config", "slam_toolbox.yaml")
     cmd_vel_to_motors_params = os.path.join(
@@ -214,6 +218,13 @@ def generate_launch_description() -> LaunchDescription:
             name="cmd_vel_arcestrator",
             output="screen",
             parameters=[cmd_vel_arcestrator_params, {"use_sim_time": use_sim_time}],
+        ),
+        Node(
+            package="robot_control_core",
+            executable="robot_control_core",
+            name="robot_control_core",
+            output="screen",
+            parameters=[robot_control_params, {"use_sim_time": use_sim_time}],
         ),
         Node(
             package="cmd_vel_to_motors",

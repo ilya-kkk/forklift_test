@@ -36,6 +36,7 @@ class RouteServiceNode(Node):
         self.declare_parameter(
             "revers_move_to_service_name", "/forklift_nav/revers_move_to"
         )
+        self.declare_parameter("status_service_name", "/forklift_nav/status")
         self.declare_parameter("follow_path_action_name", "follow_path")
         self.declare_parameter("spin_action_name", "spin")
         self.declare_parameter("drive_on_heading_action_name", "drive_on_heading")
@@ -62,6 +63,7 @@ class RouteServiceNode(Node):
         revers_move_to_service_name = str(
             self.get_parameter("revers_move_to_service_name").value
         )
+        status_service_name = str(self.get_parameter("status_service_name").value)
         follow_path_action_name = str(
             self.get_parameter("follow_path_action_name").value
         )
@@ -132,17 +134,23 @@ class RouteServiceNode(Node):
             revers_move_to_service_name,
             self._handle_revers_move_to_request,
         )
+        self.create_service(
+            StringWithJson, status_service_name, self._handle_status_request
+        )
 
         self._lock = threading.Lock()
         self._active_request: Optional[Dict[str, Any]] = None
+        self._active_request_started_at: Optional[float] = None
+        self._last_result: Dict[str, Any] = {"state": "idle"}
 
         self.get_logger().info(
-            "Route service ready: route=%s move_to=%s revers_move_to=%s map=%s follow_path=%s spin=%s drive_on_heading=%s "
+            "Route service ready: route=%s move_to=%s revers_move_to=%s status=%s map=%s follow_path=%s spin=%s drive_on_heading=%s "
             "path_topic=%s cmd_vel=%s align_min_seg=%.2f short_route_threshold=%.2f short_speed=%.2f json_graph=true"
             % (
                 route_service_name,
                 move_to_service_name,
                 revers_move_to_service_name,
+                status_service_name,
                 self._map_service_name,
                 follow_path_action_name,
                 spin_action_name,
@@ -194,6 +202,31 @@ class RouteServiceNode(Node):
 
         return self._accept_request(pending_request, response)
 
+    def _handle_status_request(self, request, response):
+        del request
+        with self._lock:
+            active_request = (
+                dict(self._active_request) if self._active_request is not None else None
+            )
+            active_started_at = self._active_request_started_at
+            last_result = dict(self._last_result)
+
+        response.success = True
+        response.message = json.dumps(
+            {
+                "active": active_request is not None,
+                "active_request": active_request,
+                "active_elapsed_sec": (
+                    max(0.0, time.monotonic() - active_started_at)
+                    if active_started_at is not None
+                    else None
+                ),
+                "last_result": last_result,
+            },
+            ensure_ascii=False,
+        )
+        return response
+
     def _accept_request(self, pending_request: Dict[str, Any], response):
         with self._lock:
             if self._active_request is not None:
@@ -207,6 +240,12 @@ class RouteServiceNode(Node):
                 )
                 return response
             self._active_request = pending_request
+            self._active_request_started_at = time.monotonic()
+            self._last_result = {
+                "state": "running",
+                "mode": pending_request["mode"],
+                "goal": pending_request["goal_value"],
+            }
 
         worker = threading.Thread(
             target=self._execute_route_request,
@@ -278,14 +317,33 @@ class RouteServiceNode(Node):
         }
 
     def _execute_route_request(self, pending_request: Dict[str, Any]) -> None:
+        result = {
+            "state": "finished",
+            "mode": pending_request["mode"],
+            "goal": pending_request["goal_value"],
+        }
         try:
             resolved_request = self._resolve_route_request(pending_request)
-            self._run_route_request(resolved_request)
+            if not self._run_route_request(resolved_request):
+                result = {
+                    "state": "failed",
+                    "mode": pending_request["mode"],
+                    "goal": pending_request["goal_value"],
+                    "error": "route execution failed",
+                }
         except Exception as exc:  # pragma: no cover - defensive logging
+            result = {
+                "state": "failed",
+                "mode": pending_request["mode"],
+                "goal": pending_request["goal_value"],
+                "error": str(exc),
+            }
             self.get_logger().error("Route execution failed: %s" % exc)
         finally:
             with self._lock:
                 self._active_request = None
+                self._active_request_started_at = None
+                self._last_result = result
 
     def _resolve_route_request(self, pending_request: Dict[str, Any]) -> Dict[str, Any]:
         map_data = self._load_map_data()
@@ -348,14 +406,13 @@ class RouteServiceNode(Node):
         except json.JSONDecodeError as exc:
             raise ValueError(f"map service returned invalid JSON: {exc}") from exc
 
-    def _run_route_request(self, resolved_request: Dict[str, Any]) -> None:
+    def _run_route_request(self, resolved_request: Dict[str, Any]) -> bool:
         if not self._follow_path_client.wait_for_server(timeout_sec=5.0):
             self.get_logger().error("FollowPath action is not available")
-            return
+            return False
 
         if resolved_request["mode"] == "revers_move_to":
-            self._run_revers_move_to_request(resolved_request)
-            return
+            return self._run_revers_move_to_request(resolved_request)
 
         path = resolved_request["path"]
         goal_point = resolved_request["goal_point"]
@@ -365,19 +422,20 @@ class RouteServiceNode(Node):
 
         if len(path.poses) > 1:
             if not self._follow_path(path, motion_mode="forward"):
-                return
+                return False
         else:
             self.get_logger().info("Route execution skipped: already at drive goal")
 
         if goal_yaw is not None and not self._rotate_to_yaw(goal_yaw, "goal yaw"):
-            return
+            return False
 
         self.get_logger().info(
             "Route execution finished successfully at %s (%d)"
             % (goal_point["alias"], int(goal_point["point_id"]))
         )
+        return True
 
-    def _run_revers_move_to_request(self, resolved_request: Dict[str, Any]) -> None:
+    def _run_revers_move_to_request(self, resolved_request: Dict[str, Any]) -> bool:
         points_by_id = resolved_request["points_by_id"]
         route_point_ids = resolved_request["route_point_ids"]
         initial_pose = resolved_request["initial_pose"]
@@ -411,7 +469,7 @@ class RouteServiceNode(Node):
                 % len(prefix_path.poses)
             )
             if not self._follow_path(prefix_path, motion_mode="forward"):
-                return
+                return False
 
         if reverse_path is not None and len(reverse_path.poses) > 1:
             self.get_logger().info(
@@ -419,7 +477,7 @@ class RouteServiceNode(Node):
                 % len(reverse_path.poses)
             )
             if not self._follow_path(reverse_path, motion_mode="reverse"):
-                return
+                return False
         else:
             self.get_logger().info("ReversMoveTo skipped: already at drive goal")
 
@@ -427,6 +485,7 @@ class RouteServiceNode(Node):
             "ReversMoveTo execution finished successfully at %s (%d)"
             % (goal_point["alias"], int(goal_point["point_id"]))
         )
+        return True
 
     def _follow_path(self, path: Path, *, motion_mode: str) -> bool:
         path_length = self._path_length(path)

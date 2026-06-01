@@ -1,0 +1,24 @@
+robot_control_core:
+  ros__parameters:
+    use_sim_time: true
+    control_service: /robot_control_core/control
+    status_topic: /robot_control_core/status
+    tick_rate_hz: 10.0
+    status_publish_period_sec: 1.0
+
+    motion_control_service: /cmd_vel_arcestrator/control
+    navigation_move_to_service: /forklift_nav/move_to
+    navigation_reverse_move_to_service: /forklift_nav/revers_move_to
+    navigation_status_service: /forklift_nav/status
+    docking_control_service: /palette_docking/control
+
+    fork_cmd_topic: /forklift/fork_cmd
+    joint_states_topic: /joint_states
+    fork_joint_name: fork_joint
+    fork_lower_position: 0.0
+    fork_lift_position: 1.0
+    fork_position_tolerance: 0.01
+    fork_action_timeout_sec: 20.0
+
+    service_call_timeout_sec: 2.0
+    action_poll_period_sec: 0.25

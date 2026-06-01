@@ -5,6 +5,7 @@ route_service:
     route_service_name: /robot_data/route/go_to_point
     move_to_service_name: /forklift_nav/move_to
     revers_move_to_service_name: /forklift_nav/revers_move_to
+    status_service_name: /forklift_nav/status
     follow_path_action_name: follow_path
     spin_action_name: spin
     drive_on_heading_action_name: drive_on_heading

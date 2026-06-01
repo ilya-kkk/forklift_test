@@ -2,7 +2,7 @@
 <package format="3">
   <name>vda5050_3_driver</name>
   <version>0.1.0</version>
-  <description>Placeholder package reserved for future vda5050_3_driver module.</description>
+  <description>VDA5050 v3 protocol adapter boundary for robot_control_core.</description>
   <maintainer email="codex@example.com">Codex</maintainer>
   <license>Apache-2.0</license>
 
