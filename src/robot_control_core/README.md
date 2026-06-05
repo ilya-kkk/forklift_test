@@ -71,6 +71,231 @@ VDA-действие. `blockingType` (`NONE`, `SINGLE`, `SOFT`, `HARD`) сохр
 `WAITING_FOR_BASE_EXTENSION`, останавливает движение через `cmd_vel_arcestrator`
 и публикует `newBaseRequest: true`.
 
+### Большая Mermaid-схема FSM
+
+Это архитектурный черновик, а не точное отражение текущего кода. Идея такая:
+верхний FSM выбирает VDA operating mode, внутри каждого mode есть свой micro FSM,
+а order-mode выполняет цикл `move -> actionType -> next`. Charging-действие
+показано как VDA5050 v3.0 actionType `startCharging`.
+
+```mermaid
+flowchart TB
+  classDef topMode fill:#eef6ff,stroke:#2563eb,color:#111827,stroke-width:2px
+  classDef mode fill:#f8fafc,stroke:#64748b,color:#111827,stroke-width:1px
+  classDef order fill:#f0fdf4,stroke:#16a34a,color:#111827,stroke-width:2px
+  classDef action fill:#fff7ed,stroke:#ea580c,color:#111827,stroke-width:2px
+  classDef nano fill:#fdf2f8,stroke:#db2777,color:#111827,stroke-width:2px
+  classDef terminal fill:#fef2f2,stroke:#dc2626,color:#111827,stroke-width:2px
+  classDef todo fill:#fafafa,stroke:#a3a3a3,color:#404040,stroke-width:1px
+
+  subgraph TOP["Top FSM: VDA operating mode"]
+    direction TB
+    PROCESS_START((process start))
+    STARTUP["STARTUP<br/>mode switch hub"]
+
+    subgraph MODES["operating modes"]
+      direction LR
+      AUTOMATIC["AUTOMATIC"]
+      SEMIAUTOMATIC["SEMIAUTOMATIC"]
+      INTERVENED["INTERVENED"]
+      MANUAL["MANUAL"]
+      SERVICE["SERVICE"]
+      TEACH_IN["TEACH_IN"]
+    end
+
+    PROCESS_START --> STARTUP
+    STARTUP <-->|set_mode| AUTOMATIC
+    STARTUP <-->|set_mode| SEMIAUTOMATIC
+    STARTUP <-->|set_mode| INTERVENED
+    STARTUP <-->|set_mode| MANUAL
+    STARTUP <-->|set_mode| SERVICE
+    STARTUP <-->|set_mode| TEACH_IN
+  end
+
+  AUTOMATIC --> AUTO_ENTRY
+  SEMIAUTOMATIC --> SEMI_ENTRY
+  INTERVENED --> INTERVENED_ENTRY
+  MANUAL --> MANUAL_ENTRY
+  SERVICE --> SERVICE_ENTRY
+  TEACH_IN --> TEACH_ENTRY
+
+  subgraph MODE_MICRO_FSMS["Mode-specific micro FSMs"]
+    direction LR
+
+    subgraph AUTO_MODE["AUTOMATIC"]
+      direction TB
+      AUTO_ENTRY([enter])
+      AUTO_READY["ready to accept order"]
+      AUTO_ORDER["run order FSM"]
+      AUTO_ENTRY --> AUTO_READY --> AUTO_ORDER
+    end
+
+    subgraph SEMI_MODE["SEMIAUTOMATIC"]
+      direction TB
+      SEMI_ENTRY([enter])
+      SEMI_APPROVAL["TODO<br/>operator approval gate"]
+      SEMI_ORDER["run order FSM"]
+      SEMI_ENTRY --> SEMI_APPROVAL --> SEMI_ORDER
+    end
+
+    subgraph INTERVENED_MODE["INTERVENED"]
+      direction TB
+      INTERVENED_ENTRY([enter])
+      INTERVENED_PAUSE["force pause active order"]
+      INTERVENED_WAIT["wait until mode changes"]
+      INTERVENED_ENTRY --> INTERVENED_PAUSE --> INTERVENED_WAIT
+    end
+
+    subgraph MANUAL_MODE["MANUAL"]
+      direction TB
+      MANUAL_ENTRY([enter])
+      MANUAL_STOP_ORDER["cancel / suspend active order"]
+      MANUAL_SOURCE["select manual cmd source"]
+      MANUAL_DRIVE["operator drives robot"]
+      MANUAL_ENTRY --> MANUAL_STOP_ORDER --> MANUAL_SOURCE --> MANUAL_DRIVE
+    end
+
+    subgraph SERVICE_MODE["SERVICE"]
+      direction TB
+      SERVICE_ENTRY([enter])
+      SERVICE_SAFE["safe service idle"]
+      SERVICE_TODO["TODO<br/>diagnostics / maintenance commands"]
+      SERVICE_ENTRY --> SERVICE_SAFE --> SERVICE_TODO
+    end
+
+    subgraph TEACH_MODE["TEACH_IN"]
+      direction TB
+      TEACH_ENTRY([enter])
+      TEACH_TODO["TODO<br/>skip for now"]
+      TEACH_ENTRY --> TEACH_TODO
+    end
+  end
+
+  AUTO_ORDER --> ORDER_ENTRY
+  SEMI_ORDER --> ORDER_ENTRY
+  INTERVENED_PAUSE --> ORDER_PAUSED
+
+  subgraph ORDER_FSM["Order FSM: move -> actionType -> next"]
+    direction TB
+    ORDER_ENTRY([enter order FSM])
+    ORDER_IDLE["IDLE<br/>no active order"]
+    ORDER_ACCEPT["ACCEPT_ORDER<br/>base + horizon received"]
+    ORDER_MOVE["MOVE_TO_TARGET<br/>edge traversal / route execution"]
+    ORDER_ACTION_SELECT{"ACTION_TYPE"}
+    ORDER_ACTION_DONE["ACTION_DONE<br/>update actionStates"]
+    ORDER_NEXT{"next step?"}
+    ORDER_WAIT_BASE["WAITING_FOR_BASE_EXTENSION<br/>newBaseRequest = true"]
+    ORDER_PAUSED["PAUSED"]
+    ORDER_CANCEL["CANCELLING"]
+    ORDER_FAILED["FAILED_RECOVERABLE"]
+    ORDER_DONE((order complete))
+
+    ORDER_ENTRY --> ORDER_IDLE
+    ORDER_IDLE -->|start_mission| ORDER_ACCEPT
+    ORDER_ACCEPT --> ORDER_MOVE
+    ORDER_MOVE --> ORDER_ACTION_SELECT
+    ORDER_ACTION_SELECT -->|startCharging| CHARGE_START
+    ORDER_ACTION_SELECT -->|pick| PICK_START
+    ORDER_ACTION_SELECT -->|drop| DROP_START
+    CHARGE_DONE --> ORDER_ACTION_DONE
+    PICK_DONE --> ORDER_ACTION_DONE
+    DROP_DONE --> ORDER_ACTION_DONE
+    CHARGE_FAILED --> ORDER_FAILED
+    PICK_FAILED --> ORDER_FAILED
+    DROP_FAILED --> ORDER_FAILED
+    ORDER_ACTION_DONE --> ORDER_NEXT
+    ORDER_NEXT -->|more released steps| ORDER_MOVE
+    ORDER_NEXT -->|base empty, horizon exists| ORDER_WAIT_BASE
+    ORDER_WAIT_BASE -->|append_base| ORDER_MOVE
+    ORDER_NEXT -->|no more steps| ORDER_DONE
+    ORDER_DONE --> ORDER_IDLE
+    ORDER_MOVE -->|pause| ORDER_PAUSED
+    ORDER_ACTION_SELECT -->|pause| ORDER_PAUSED
+    ORDER_PAUSED -->|resume| ORDER_MOVE
+    ORDER_IDLE -->|cancel| ORDER_CANCEL
+    ORDER_MOVE -->|cancel| ORDER_CANCEL
+    ORDER_PAUSED -->|cancel| ORDER_CANCEL
+    ORDER_FAILED -->|cancel / reset| ORDER_CANCEL
+    ORDER_CANCEL --> ORDER_IDLE
+  end
+
+  subgraph ACTION_FSMS["Action type FSMs"]
+    direction LR
+
+    subgraph CHARGE_FSM["startCharging"]
+      direction TB
+      CHARGE_START([start])
+      CHARGE_VERIFY["verify robot at charging station"]
+      CHARGE_ENABLE["activate charging process"]
+      CHARGE_WAIT["wait powerSupply.charging = true"]
+      CHARGE_DONE["FINISHED"]
+      CHARGE_FAILED["FAILED"]
+
+      CHARGE_START --> CHARGE_VERIFY --> CHARGE_ENABLE --> CHARGE_WAIT
+      CHARGE_WAIT -->|charging started| CHARGE_DONE
+      CHARGE_WAIT -->|charger error / timeout| CHARGE_FAILED
+    end
+
+    subgraph PICK_FSM["pick"]
+      direction TB
+      PICK_START([start])
+      PICK_LOWER["lower forks"]
+      PICK_NEED_DOCK{"need pallet docking?"}
+      PICK_LIFT["lift forks"]
+      PICK_LOAD["mark load picked"]
+      PICK_DONE["FINISHED"]
+      PICK_FAILED["FAILED"]
+
+      subgraph PICK_DOCKING_FSM["pallet docking controller, pick only"]
+        direction TB
+        PICK_DOCK_START([start docking])
+        PICK_DOCK_WAIT_TAG["wait pallet tag"]
+        PICK_DOCK_ALIGN["align / compensate"]
+        PICK_DOCK_APPROACH["approach standoff"]
+        PICK_DOCK_UNDER["drive under pallet"]
+        PICK_DOCK_DONE["DONE"]
+        PICK_DOCK_FAILED["FAILED"]
+
+        PICK_DOCK_START --> PICK_DOCK_WAIT_TAG --> PICK_DOCK_ALIGN --> PICK_DOCK_APPROACH --> PICK_DOCK_UNDER
+        PICK_DOCK_UNDER --> PICK_DOCK_DONE
+        PICK_DOCK_WAIT_TAG -->|timeout| PICK_DOCK_FAILED
+        PICK_DOCK_ALIGN -->|timeout / angle limit| PICK_DOCK_FAILED
+        PICK_DOCK_APPROACH -->|timeout / lost tag| PICK_DOCK_FAILED
+      end
+
+      PICK_START --> PICK_LOWER --> PICK_NEED_DOCK
+      PICK_NEED_DOCK -->|yes| PICK_DOCK_START
+      PICK_DOCK_DONE --> PICK_LIFT
+      PICK_NEED_DOCK -->|no| PICK_LIFT
+      PICK_LIFT --> PICK_LOAD --> PICK_DONE
+      PICK_LOWER -->|fork failed| PICK_FAILED
+      PICK_DOCK_FAILED --> PICK_FAILED
+      PICK_LIFT -->|fork failed| PICK_FAILED
+    end
+
+    subgraph DROP_FSM["drop"]
+      direction TB
+      DROP_START([start])
+      DROP_LOWER["lower forks"]
+      DROP_LOAD["clear load"]
+      DROP_DONE["FINISHED"]
+      DROP_FAILED["FAILED"]
+
+      DROP_START --> DROP_LOWER
+      DROP_LOWER --> DROP_LOAD --> DROP_DONE
+      DROP_LOWER -->|fork failed| DROP_FAILED
+    end
+  end
+
+  class STARTUP,AUTOMATIC,SEMIAUTOMATIC,INTERVENED,MANUAL,SERVICE,TEACH_IN topMode
+  class AUTO_ENTRY,AUTO_READY,AUTO_ORDER,SEMI_ENTRY,SEMI_APPROVAL,SEMI_ORDER,INTERVENED_ENTRY,INTERVENED_PAUSE,INTERVENED_WAIT,MANUAL_ENTRY,MANUAL_STOP_ORDER,MANUAL_SOURCE,MANUAL_DRIVE,SERVICE_ENTRY,SERVICE_SAFE,SERVICE_TODO,TEACH_ENTRY,TEACH_TODO mode
+  class ORDER_IDLE,ORDER_ACCEPT,ORDER_MOVE,ORDER_ACTION_SELECT,ORDER_ACTION_DONE,ORDER_NEXT,ORDER_WAIT_BASE,ORDER_PAUSED,ORDER_CANCEL,ORDER_FAILED order
+  class CHARGE_START,CHARGE_VERIFY,CHARGE_ENABLE,CHARGE_WAIT,CHARGE_DONE,PICK_START,PICK_LOWER,PICK_NEED_DOCK,PICK_LIFT,PICK_LOAD,PICK_DONE,DROP_START,DROP_LOWER,DROP_LOAD,DROP_DONE action
+  class PICK_DOCK_START,PICK_DOCK_WAIT_TAG,PICK_DOCK_ALIGN,PICK_DOCK_APPROACH,PICK_DOCK_UNDER,PICK_DOCK_DONE nano
+  class CHARGE_FAILED,PICK_FAILED,DROP_FAILED,PICK_DOCK_FAILED terminal
+  class SEMI_APPROVAL,SERVICE_TODO,TEACH_TODO todo
+```
+
 ## YASMIN Viewer
 
 `robot_control_core` по умолчанию публикует активную FSM в `/fsm_viewer`.
