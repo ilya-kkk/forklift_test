@@ -1,37 +1,54 @@
 # robot_control_core
 
-`robot_control_core` is the VDA-independent mission owner for the forklift stack.
-It does not speak MQTT or VDA 5050 directly. It accepts an internal mission JSON,
-executes micro-actions through ROS capabilities, and publishes a normalized robot
-state that a VDA adapter, UI, or test client can consume.
+`robot_control_core` - центральный владелец миссии погрузчика. Он не работает с
+MQTT и не парсит VDA 5050 напрямую; этим должен заниматься адаптер
+`vda5050_3_driver`. Ядро принимает JSON через ROS-сервис, выполняет разрешенные
+VDA-действия заказа через локальные ROS-возможности и публикует
+нормализованное состояние для VDA-адаптера, UI или тестов.
 
-## Runtime
+Нода должна быть единственным владельцем активной миссии. Внешним компонентам не
+нужно напрямую дергать вилы, docking или `cmd_vel_arcestrator`, если операция
+является частью выполнения заказа.
 
-- Node: `robot_control_core`
-- Control service: `/robot_control_core/control`
-- Service type: `forklift_interfaces/srv/StringWithJson`
-- Status topic: `/robot_control_core/status`
-- Status type: `std_msgs/String` with JSON payload
+## Запуск и интерфейсы
 
-The node is the only intended owner of an active mission. Higher-level adapters
-should call this service instead of directly calling navigation, fork, docking, or
-motion-arbitration handles.
+- Нода: `robot_control_core`
+- Сервис управления: `/robot_control_core/control`
+- Тип сервиса: `forklift_interfaces/srv/StringWithJson`
+- Топик статуса: `/robot_control_core/status`
+- Тип статуса: `std_msgs/String`, внутри JSON
+- FSM: YASMIN
+- Web UI для FSM: YASMIN Viewer
 
-## Layers
+Зависимости для запуска на хосте:
+
+```bash
+sudo apt install ros-$ROS_DISTRO-yasmin ros-$ROS_DISTRO-yasmin-viewer
+```
+
+В Docker эти пакеты ставятся из `Dockerfile`.
+
+## Связи
 
 ```text
 vda5050_3_driver / UI / tests
   -> /robot_control_core/control
 robot_control_core
-  -> NavigationCapability  -> /forklift_nav/move_to, /forklift_nav/revers_move_to
-  -> ForkCapability        -> /forklift/fork_cmd + /joint_states
-  -> DockingCapability     -> /palette_docking/control
-  -> MotionCapability      -> /cmd_vel_arcestrator/control
+  -> ForkCapability    -> /forklift/fork_cmd + /joint_states
+  -> DockingCapability -> /palette_docking/control
+  -> MotionCapability  -> /cmd_vel_arcestrator/control
 ```
+
+Навигация по ребрам VDA-заказа не является `actionType` в `robot_control_core`.
+Перемещение по топологии заказа должно приходить из VDA-адаптера как состояние
+узлов/ребер и отдельная логика маршрута, а не как action `navigate`.
 
 ## FSM
 
-Top-level states:
+Миссия выполняется через YASMIN `StateMachine`. Сервисный слой ROS только меняет
+данные миссии, ставит флаги паузы, отмены или расширения base и будит FSM.
+
+Основные состояния:
 
 ```text
 STARTUP -> IDLE -> ORDER_ACTIVE -> IDLE
@@ -41,114 +58,368 @@ STARTUP -> IDLE -> ORDER_ACTIVE -> IDLE
                     +-> PAUSED
                     +-> CANCELLING
                     +-> FAILED_RECOVERABLE
-MANUAL / INTERVENED / SERVICE are operating modes that gate mission execution.
 ```
 
-`ORDER_ACTIVE` runs a conservative action scheduler: one micro-action is active
-at a time. This already respects VDA blocking semantics. The action model keeps
-`blockingType` (`NONE`, `SINGLE`, `SOFT`, `HARD`) in state so the scheduler can
-be expanded later to parallel `NONE`/`SOFT` execution without changing the API.
+`MANUAL`, `SERVICE`, `TEACH_IN` и `STARTUP` блокируют старт миссии заказа.
+`INTERVENED` ставит активную миссию на паузу.
 
-When released base actions finish and horizon actions are still present, the core
-switches to `WAITING_FOR_BASE_EXTENSION`, stops motion via `cmd_vel_arcestrator`,
-and reports `newBaseRequest: true`.
+Сейчас планировщик консервативный: одновременно выполняется только одно внешнее
+VDA-действие. `blockingType` (`NONE`, `SINGLE`, `SOFT`, `HARD`) сохраняется в
+состоянии, но параллельное выполнение `NONE`/`SOFT` пока не реализовано.
 
-## Control Commands
+Если released base закончился, а `horizon_steps` еще есть, FSM переходит в
+`WAITING_FOR_BASE_EXTENSION`, останавливает движение через `cmd_vel_arcestrator`
+и публикует `newBaseRequest: true`.
 
-Status:
+## YASMIN Viewer
+
+`robot_control_core` по умолчанию публикует активную FSM в `/fsm_viewer`.
+Публикуются отдельные graph names:
+`robot_control_core`, `automatic_mode`, `semiautomatic_mode`, `intervened_mode`.
+В viewer можно выбрать как верхний автомат ноды, так и mode-specific FSM.
+
+Запуск viewer отдельно:
 
 ```bash
-ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson "{message: '{\"command\": \"status\"}'}"
+ros2 run yasmin_viewer yasmin_viewer_node --ros-args -p host:=127.0.0.1 -p port:=5000
 ```
 
-Start a mission:
+После этого открыть:
+
+```text
+http://127.0.0.1:5000/
+```
+
+Через demo launch:
 
 ```bash
-ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson "{message: '{\"command\": \"start_mission\", \"mission_id\": \"demo_pick\", \"steps\": [{\"type\": \"navigate\", \"target\": \"0001\"}, {\"type\": \"pick\", \"tag_frame\": \"pallet_b_south_08_tag\"}, {\"type\": \"navigate\", \"target\": \"0002\"}, {\"type\": \"drop\"}]}'}"
+ros2 launch forklift_demo sim_followpath.launch.py launch_yasmin_viewer:=true
+```
+
+Отключить публикацию FSM можно параметром:
+
+```bash
+ros2 run robot_control_core robot_control_core --ros-args -p enable_yasmin_viewer:=false
+```
+
+## Команды сервиса
+
+Все команды отправляются в поле `message` как JSON-строка:
+
+```bash
+ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson 'message: >-
+  {"command":"stateRequest"}'
+```
+
+Поддерживаемые команды:
+
+- `stateRequest` - вернуть текущий статус.
+- `start_mission` - старт новой миссии.
+- `append_base` - добавить released base или выпустить часть horizon.
+- `startPause` - поставить миссию на паузу.
+- `stopPause` - снять миссию с паузы.
+- `cancelOrder` - отменить активную миссию.
+- `set_mode` - сменить режим работы.
+- `reset` - сбросить активную миссию и локальные состояния.
+- `clear_errors` - очистить список ошибок.
+
+Алиасы, которые оставлены для внутренних тестов и старых клиентов:
+`status`, `start`, `run_mission`, `extend_base`, `release_horizon`, `pause`,
+`resume`, `release`, `cancel`, `mode`, `clear`.
+
+## Примеры
+
+Запрос статуса:
+
+```bash
+ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson 'message: >-
+  {"command":"stateRequest"}'
+```
+
+Миссия `pick -> drop` без экранирования кавычек:
+
+```bash
+ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson 'message: |-
+  {"command":"start_mission","mission_id":"demo_pick_drop","steps":[
+    {"actionType":"pick","actionId":"pick_1","blockingType":"HARD","actionParameters":[{"key":"loadId","value":"L1"}]},
+    {"actionType":"drop","actionId":"drop_1","blockingType":"HARD","actionParameters":[{"key":"loadId","value":"L1"}]}
+  ]}'
+```
+
+Миссия с `finePositioning` перед `pick`:
+
+```bash
+ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson 'message: |-
+  {"command":"start_mission","mission_id":"demo_pick_with_dock","steps":[
+    {"actionType":"finePositioning","actionId":"fp_1","blockingType":"HARD","actionParameters":[{"key":"stationName","value":"pallet_b_south_08_tag"}]},
+    {"actionType":"pick","actionId":"pick_1","blockingType":"HARD","actionParameters":[{"key":"stationName","value":"pallet_b_south_08_tag"},{"key":"loadId","value":"L1"}]}
+  ]}'
 ```
 
 Pause/resume/cancel:
 
 ```bash
-ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson "{message: '{\"command\": \"pause\"}'}"
-ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson "{message: '{\"command\": \"resume\"}'}"
-ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson "{message: '{\"command\": \"cancel\"}'}"
+ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson 'message: >-
+  {"command":"startPause"}'
+
+ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson 'message: >-
+  {"command":"stopPause"}'
+
+ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson 'message: >-
+  {"command":"cancelOrder"}'
 ```
 
-Release horizon into base:
+Выпустить два действия из horizon в base:
 
 ```bash
-ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson "{message: '{\"command\": \"append_base\", \"release_horizon_count\": 2}'}"
+ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson 'message: >-
+  {"command":"append_base","release_horizon_count":2}'
 ```
 
-Set operating mode:
+Сменить operating mode:
 
 ```bash
-ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson "{message: '{\"command\": \"set_mode\", \"mode\": \"AUTOMATIC\"}'}"
+ros2 service call /robot_control_core/control forklift_interfaces/srv/StringWithJson 'message: >-
+  {"command":"set_mode","mode":"AUTOMATIC"}'
 ```
 
-## Mission Schema
+## Формат миссии
 
-Accepted `start_mission` fields:
+`start_mission` принимает:
 
-- `mission_id`: internal mission identifier.
-- `order_id`, `order_update_id`: optional VDA-facing identifiers passed through
-  into status.
-- `steps`: released base micro-actions.
-- `base_steps`: alias for `steps`.
-- `horizon_steps`: planned but unreleased micro-actions.
-- `nodeStates`, `edgeStates`: optional pass-through VDA-style state arrays.
+- `mission_id` - внутренний идентификатор миссии.
+- `order_id`, `order_update_id` - VDA-идентификаторы, пробрасываются в
+  статус.
+- `steps` - released base actions.
+- `base_steps` - алиас для `steps`.
+- `horizon_steps` - запланированные, но еще не released actions.
+- `nodeStates`, `edgeStates` - VDA-массивы состояния, пробрасываются в
+  status.
 
-Supported micro-actions:
+Каждый step должен иметь:
+
+- `actionType` - один из поддерживаемых VDA action types.
+- `actionId` - идентификатор действия; если не задан, ядро сгенерирует ID.
+- `blockingType` - `NONE`, `SINGLE`, `SOFT` или `HARD`; по умолчанию `HARD`.
+- `actionParameters` - массив объектов `{ "key": "...", "value": ... }`.
+
+Параметры также можно передавать верхнеуровневыми полями step. Они будут
+собраны в общий словарь параметров действия, кроме служебных полей вроде
+`actionType`, `actionId`, `blockingType`.
+
+## Поддерживаемые VDA-действия заказа
+
+Внешне доступны только:
 
 ```json
-{"type": "navigate", "target": "0001", "reverse": false}
-{"type": "fork_position", "position": 0.0}
-{"type": "dock", "tag_frame": "pallet_b_south_08_tag"}
-{"type": "pick", "tag_frame": "pallet_b_south_08_tag", "load_id": "L1"}
-{"type": "drop"}
-{"type": "wait", "duration_sec": 2.0}
-{"type": "set_load", "loaded": true, "load_id": "L1"}
+{"actionType":"finePositioning","actionParameters":[{"key":"stationName","value":"pallet_b_south_08_tag"}]}
+{"actionType":"pick","actionParameters":[{"key":"stationName","value":"pallet_b_south_08_tag"},{"key":"loadId","value":"L1"}]}
+{"actionType":"drop","actionParameters":[{"key":"loadId","value":"L1"}]}
 ```
 
-`pick` expands to:
+`finePositioning` вызывает `/palette_docking/control` и переключает
+`cmd_vel_arcestrator` на источник `pallet_docking`.
+
+`pick` внутри выполняет:
 
 ```text
-fork_position(lower) -> dock -> fork_position(lift) -> set_load(true)
+опустить грузозахват -> optional finePositioning -> поднять грузозахват -> обновить loads
 ```
 
-`drop` expands to:
+По умолчанию `pick` делает `finePositioning`. Отключить можно параметром
+`{"key":"dock","value":false}`.
+
+`drop` внутри выполняет:
 
 ```text
-optional dock -> fork_position(lower) -> set_load(false)
+optional finePositioning -> опустить грузозахват -> обновить loads
 ```
 
-Every step may include `actionId`/`action_id` and `blockingType`. If omitted, the
-core generates an ID and uses `HARD`.
+Для `drop` docking включается, если задан `stationName`/`station_name` или параметр
+`dock=true`.
 
-## VDA 5050 Mapping
+### Какие API вызывает каждое действие
 
-The VDA driver should remain a protocol adapter:
+Ниже перечислены именно внешние ROS API вызовы, которые делает `robot_control_core`.
+Локальные изменения статуса, `loads`, `actionStates` и FSM в список не входят.
 
-- MQTT `order` -> validate JSON/schema -> convert released nodes/edges/actions to
-  `start_mission` or `append_base`.
-- MQTT `instantActions.startPause` -> `pause`.
-- MQTT `instantActions.stopPause` -> `resume`.
-- MQTT `instantActions.cancelOrder` -> `cancel`.
-- Core `/robot_control_core/status` -> VDA `state`.
+#### `finePositioning`
 
-Recommended action mapping:
+`finePositioning` запускает docking-контур и не трогает вилы.
 
-- VDA edge traversal -> `navigate`.
-- VDA `finePositioning` -> `dock`.
+Порядок вызовов:
+
+1. `POST-like` JSON в `/cmd_vel_arcestrator/control`:
+
+```json
+{"command":"select_source","source":"pallet_docking"}
+```
+
+2. `POST-like` JSON в `/palette_docking/control`:
+
+```json
+{
+  "command":"start",
+  "tag_frame":"<stationName|station_name|tag_frame>",
+  "standoff_distance_m": ...,
+  "approach_extra_drive_m": ...,
+  "final_drive_distance_m": ...,
+  "max_turn_angle_deg|max_turn_angle_rad": ...
+}
+```
+
+3. Повторяющиеся polling-вызовы в `/palette_docking/control`:
+
+```json
+{"command":"status"}
+```
+
+4. На завершении или отмене миссии `robot_control_core` может отправить:
+
+```json
+{"command":"stop"}
+```
+
+в `/cmd_vel_arcestrator/control` и при отмене активного docking-шагa также в
+`/palette_docking/control`.
+
+#### `pick`
+
+`pick` состоит из трех внешних фаз, если `dock=true` по умолчанию:
+
+1. Опустить вилы в нижнюю позицию:
+
+```text
+/forklift/fork_cmd <- Float64(position=lower_position)
+```
+
+По умолчанию берется `fork_lower_position` из параметров ядра, либо `height` /
+`lower_position` из параметров действия.
+
+2. `finePositioning`:
+
+```json
+{"command":"select_source","source":"pallet_docking"}
+```
+
+в `/cmd_vel_arcestrator/control`, затем
+
+```json
+{"command":"start", "...": "..."}
+```
+
+в `/palette_docking/control`, плюс периодический polling через
+`{"command":"status"}`.
+
+3. Поднять вилы:
+
+```text
+/forklift/fork_cmd <- Float64(position=lift_position)
+```
+
+После завершения подъема `robot_control_core` только обновляет `loads`
+внутри себя. Внешнего API-вызова для изменения load state нет.
+
+Если `dock=false`, то шаг `finePositioning` пропускается:
+
+```text
+/forklift/fork_cmd (lower) -> /forklift/fork_cmd (lift) -> loads update
+```
+
+#### `drop`
+
+`drop` зеркален `pick`, но без подъема груза в конце:
+
+1. Если нужен docking, запускается `finePositioning`:
+
+```json
+{"command":"select_source","source":"pallet_docking"}
+```
+
+в `/cmd_vel_arcestrator/control`, затем
+
+```json
+{"command":"start", "...": "..."}
+```
+
+в `/palette_docking/control`, плюс polling `{"command":"status"}`.
+
+2. Опустить вилы:
+
+```text
+/forklift/fork_cmd <- Float64(position=lower_position)
+```
+
+3. Внутренне очистить `loads`.
+
+Если docking не нужен, `drop` сразу переходит к опусканию вил.
+
+#### Что `pick` и `drop` не вызывают напрямую
+
+- `navigation_forklift` и route service не вызываются.
+- `cmd_vel` напрямую не публикуется из `robot_control_core`; движение через docking идет только через `cmd_vel_arcestrator`.
+- Внешний load API отсутствует; `loads` меняется только внутри `robot_control_core`.
+
+## Маппинг VDA 5050
+
+`vda5050_3_driver` должен оставаться протокольным адаптером:
+
+- MQTT `order` -> валидация JSON/schema -> `start_mission` или `append_base`.
+- MQTT `instantActions.startPause` -> `startPause`.
+- MQTT `instantActions.stopPause` -> `stopPause`.
+- MQTT `instantActions.cancelOrder` -> `cancelOrder`.
+- `/robot_control_core/status` -> VDA `state`.
+
+Рекомендуемый маппинг действий:
+
+- VDA edge traversal - это топология заказа, не `actionType`.
+- VDA `finePositioning` -> `finePositioning`.
 - VDA `pick` -> `pick`.
 - VDA `drop` -> `drop`.
 
-## Current Limits
+## JSON статуса
 
-- The action scheduler is intentionally conservative and runs one action at a time.
-- Navigation completion depends on `/forklift_nav/status`, added to
-  `navigation_forklift/route_service`.
-- Navigation cancellation is currently enforced by stopping `cmd_vel_arcestrator`;
-  the underlying Nav2 route service does not yet cancel its active action goal.
-- Load state is internal state only; there is no physical load sensor integration yet.
+`/robot_control_core/status` и ответ сервиса содержат основные поля:
+
+- `state`, `substate` - верхнее состояние и текущий substate FSM.
+- `operatingMode` - текущий режим работы.
+- `missionId`, `orderId`, `orderUpdateId` - идентификаторы миссии/заказа.
+- `paused`, `newBaseRequest` - флаги управления выполнением заказа.
+- `currentActionId`, `queuedActionIds`, `horizonActionIds` - состояние очередей.
+- `nodeStates`, `edgeStates` - VDA-массивы, которые ядро пробрасывает без изменений.
+- `actionStates`, `instantActionStates` - состояния order/instant actions.
+- `loads` - локальное состояние груза.
+- `errors` - ошибки миссии.
+- `forkPosition` - последняя позиция вил из `/joint_states`.
+
+## Параметры
+
+Основные параметры находятся в `config/robot_control_core.yaml`:
+
+- `control_service`
+- `status_topic`
+- `tick_rate_hz`
+- `status_publish_period_sec`
+- `enable_yasmin_viewer`
+- `yasmin_viewer_publish_rate_hz`
+- `motion_control_service`
+- `docking_control_service`
+- `fork_cmd_topic`
+- `joint_states_topic`
+- `fork_joint_name`
+- `fork_lower_position`
+- `fork_lift_position`
+- `fork_position_tolerance`
+- `fork_action_timeout_sec`
+- `service_call_timeout_sec`
+- `action_poll_period_sec`
+
+## Текущие ограничения
+
+- Планировщик выполняет одно внешнее action за раз.
+- `blockingType` пока хранится и публикуется, но не дает параллельного
+  выполнения `NONE`/`SOFT`.
+- `loads` обновляется логикой `pick/drop`; физического датчика груза пока нет.
+- Внешние actions `navigate`, `fork_position`, `wait`, `set_load`, `dock` не
+  принимаются. Для VDA docking используется `finePositioning`; управление вилами
+  и load state являются внутренними шагами `pick/drop`.

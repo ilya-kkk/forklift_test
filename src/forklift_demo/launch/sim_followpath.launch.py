@@ -38,6 +38,9 @@ def generate_launch_description() -> LaunchDescription:
     use_sim_time = LaunchConfiguration("use_sim_time")
     launch_rviz = LaunchConfiguration("launch_rviz")
     launch_gz_gui = LaunchConfiguration("launch_gz_gui")
+    launch_yasmin_viewer = LaunchConfiguration("launch_yasmin_viewer")
+    yasmin_viewer_host = LaunchConfiguration("yasmin_viewer_host")
+    yasmin_viewer_port = LaunchConfiguration("yasmin_viewer_port")
     activate_apriltag_detector = LaunchConfiguration("activate_apriltag_detector")
     launch_apriltag_detection_monitor = LaunchConfiguration(
         "launch_apriltag_detection_monitor"
@@ -330,6 +333,19 @@ def generate_launch_description() -> LaunchDescription:
                 )
             ],
         ),
+        Node(
+            package="yasmin_viewer",
+            executable="yasmin_viewer_node",
+            name="yasmin_viewer",
+            output="screen",
+            parameters=[
+                {
+                    "host": ParameterValue(yasmin_viewer_host, value_type=str),
+                    "port": ParameterValue(yasmin_viewer_port, value_type=int),
+                }
+            ],
+            condition=IfCondition(launch_yasmin_viewer),
+        ),
     ]
 
     configure_slam_toolbox = EmitEvent(
@@ -360,6 +376,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("launch_rviz", default_value="false"),
             DeclareLaunchArgument("launch_gz_gui", default_value="true"),
+            DeclareLaunchArgument("launch_yasmin_viewer", default_value="false"),
+            DeclareLaunchArgument("yasmin_viewer_host", default_value="127.0.0.1"),
+            DeclareLaunchArgument("yasmin_viewer_port", default_value="5000"),
             DeclareLaunchArgument("activate_apriltag_detector", default_value="false"),
             DeclareLaunchArgument(
                 "launch_apriltag_detection_monitor", default_value="false"

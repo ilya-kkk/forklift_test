@@ -33,7 +33,7 @@ services:
       colcon build --packages-up-to forklift_demo --cmake-force-configure &&
       touch /ws/install/.forklift_demo_ready &&
       source /ws/install/setup.bash &&
-      ros2 launch forklift_demo sim_followpath.launch.py launch_rviz:=false launch_gz_gui:=true"
+      ros2 launch forklift_demo sim_followpath.launch.py launch_rviz:=false launch_gz_gui:=true launch_yasmin_viewer:=true"
 
   rviz:
     image: forklift_demo:jazzy
@@ -100,7 +100,7 @@ services:
       until [ -f /ws/install/.forklift_demo_ready ]; do sleep 1; done &&
       source /ws/install/setup.bash &&
       ros2 run rqt_robot_steering rqt_robot_steering --ros-args
-      -p default_topic:=/cmd_vel_raw
+      -p default_topic:=/cmd_vel_manual
       -p default_vx_min:=-0.85
       -p default_vx_max:=0.85
       -p default_vw_min:=-1.0

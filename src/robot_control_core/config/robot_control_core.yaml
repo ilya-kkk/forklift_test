@@ -5,11 +5,10 @@ robot_control_core:
     status_topic: /robot_control_core/status
     tick_rate_hz: 10.0
     status_publish_period_sec: 1.0
+    enable_yasmin_viewer: true
+    yasmin_viewer_publish_rate_hz: 4
 
     motion_control_service: /cmd_vel_arcestrator/control
-    navigation_move_to_service: /forklift_nav/move_to
-    navigation_reverse_move_to_service: /forklift_nav/revers_move_to
-    navigation_status_service: /forklift_nav/status
     docking_control_service: /palette_docking/control
 
     fork_cmd_topic: /forklift/fork_cmd

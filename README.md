@@ -15,7 +15,7 @@
 - `forklift_interfaces` - общие srv интерфейсы, сейчас `StringWithJson.srv`.
 - `palette_docking` - поэтапный заезд к палете из pre-picking позиции по TF тега.
 - `cmd_vel_arcestrator` - выбор активного источника velocity-команд.
-- `robot_control_core` - VDA-независимое ядро миссий и micro-actions.
+- `robot_control_core` - VDA-независимое ядро миссий и VDA order actions.
 - `vda5050_3_driver` - будущий VDA5050 v3 protocol adapter поверх `robot_control_core`.
 
 В каждом пакете есть свой `README.md` с ответственностью, составом и связями.
@@ -33,7 +33,6 @@ flowchart LR
   CM -->|/cmd_vel_nav| AR[cmd_vel_arcestrator]
   PD[palette_docking] -->|/cmd_vel_pallet_docking| AR
   RCC -->|select source / stop| AR
-  RCC -->|/forklift_nav/move_to| RS
   RCC -->|/palette_docking/control| PD
   RCC -->|/forklift/fork_cmd| FM
   AR -->|/cmd_vel| CVM[cmd_vel_to_motors]
@@ -48,6 +47,13 @@ flowchart LR
 colcon build --symlink-install --packages-up-to forklift_demo
 source install/setup.bash
 ros2 launch forklift_demo sim_followpath.launch.py launch_rviz:=false launch_gz_gui:=false
+```
+
+YASMIN web viewer для FSM:
+
+```bash
+ros2 launch forklift_demo sim_followpath.launch.py launch_yasmin_viewer:=true
+# затем открыть http://127.0.0.1:5000/
 ```
 
 Docker:

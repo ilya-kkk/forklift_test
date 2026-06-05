@@ -32,25 +32,25 @@ MQTT VDA5050 topics
 
 ```text
 VDA edge traversal
-  -> robot_control_core step: {"type": "navigate", "target": nodeId}
+  -> order topology / route execution, not an actionType
 
 VDA finePositioning
-  -> robot_control_core step: {"type": "dock", "tag_frame": "..."}
+  -> robot_control_core step: {"actionType": "finePositioning", "actionParameters": [{"key": "stationName", "value": "..."}]}
 
 VDA pick
-  -> robot_control_core step: {"type": "pick", "tag_frame": "...", "load_id": "..."}
+  -> robot_control_core step: {"actionType": "pick", "actionParameters": [{"key": "stationName", "value": "..."}, {"key": "loadId", "value": "..."}]}
 
 VDA drop
-  -> robot_control_core step: {"type": "drop"}
+  -> robot_control_core step: {"actionType": "drop", "actionParameters": [{"key": "loadId", "value": "..."}]}
 
 instantAction startPause
-  -> {"command": "pause"}
+  -> {"command": "startPause"}
 
 instantAction stopPause
-  -> {"command": "resume"}
+  -> {"command": "stopPause"}
 
 instantAction cancelOrder
-  -> {"command": "cancel"}
+  -> {"command": "cancelOrder"}
 ```
 
 ## Минимальный План Реализации
