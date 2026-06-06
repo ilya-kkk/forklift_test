@@ -1,0 +1,82 @@
+palette_docking_no_camera:
+  ros__parameters:
+    use_sim_time: true
+
+    service_name: /palette_docking_no_camera/control
+    target_frame: base_link
+    global_frame: map
+    robot_base_frame: base_link
+
+    # Empty tag_frame means: try tag_frame_candidates and pick the tag with
+    # the smallest initial angle in the robot docking frame.
+    tag_frame: ""
+    tag_frame_candidates:
+      [
+        pallet_b_south_00_tag,
+        pallet_b_south_01_tag,
+        pallet_b_south_02_tag,
+        pallet_b_south_03_tag,
+        pallet_b_south_04_tag,
+        pallet_b_south_05_tag,
+        pallet_b_south_06_tag,
+        pallet_b_south_07_tag,
+        pallet_b_south_08_tag,
+        pallet_b_south_09_tag,
+        pallet_b_south_10_tag,
+        pallet_b_south_11_tag,
+        pallet_b_north_00_tag,
+        pallet_b_north_01_tag,
+        pallet_b_north_02_tag,
+        pallet_b_north_03_tag,
+        pallet_b_north_04_tag,
+        pallet_b_north_05_tag,
+        pallet_b_north_06_tag,
+        pallet_b_north_07_tag,
+        pallet_b_north_09_tag,
+        pallet_b_north_10_tag,
+        pallet_b_north_11_tag,
+      ]
+
+    # Matches the old pallet_docking rear-docking convention: the pallet is
+    # approached with negative base_link X, so DriveOnHeading gets negative
+    # target.x/speed during the final pallet entry.
+    dock_motion_mode: reverse
+
+    lookup_timeout_sec: 0.05
+    tag_timeout_sec: 0.5
+    wait_for_tag_timeout_sec: 5.0
+    transform_timeout_sec: 1.0
+
+    # If the tag is closer than this distance in the docking frame, the robot
+    # first drives away from the pallet before planning the prefinal segment.
+    close_distance_threshold_m: 0.8
+    retreat_distance_m: 0.45
+
+    # Prefinal point is placed on the current robot-to-pallet line this far
+    # before the pallet tag. From there, the robot aligns and drives straight.
+    prefinal_distance_from_pallet_m: 1.0
+    final_drive_distance_m: 1.0
+    max_initial_angle_rad: 1.2
+    prefinal_xy_tolerance_m: 0.05
+    yaw_tolerance_rad: 0.05
+
+    follow_path_action_name: follow_path
+    spin_action_name: spin
+    drive_on_heading_action_name: drive_on_heading
+    controller_id: FollowPath
+    goal_checker_id: goal_checker
+    progress_checker_id: ""
+
+    path_topic: /palette_docking_no_camera/path
+    marker_topic: /palette_docking_no_camera/markers
+
+    action_server_timeout_sec: 5.0
+    follow_timeout_sec: 60.0
+    spin_timeout_sec: 20.0
+    drive_timeout_sec: 20.0
+    retreat_speed_mps: 0.12
+    prefinal_drive_speed_mps: 0.20
+    final_drive_speed_mps: 0.16
+    short_prefinal_drive_threshold_m: 0.35
+    marker_lifetime_sec: 0.0
+    start_enabled: false
