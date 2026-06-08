@@ -7,6 +7,9 @@ cmd_vel_arcestrator:
     publish_rate_hz: 30.0
     source_timeout_sec: 0.25
     status_publish_period_sec: 1.0
+    default_source: navigation
+    max_linear_speed_mps: 1.0
+    max_angular_speed_radps: 0.8
 
     pallet_docking_topic: /cmd_vel_pallet_docking
     charging_docking_topic: /cmd_vel_charging_docking

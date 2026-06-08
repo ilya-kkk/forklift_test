@@ -3,7 +3,8 @@
 `paette_docking_no_camera` is a Nav2-based pallet docking module. It reads the
 AprilTag TF that is already published by the AprilTag detector stack, builds a
 small docking plan, publishes visualization into RViz, and executes the plan
-through Nav2 actions instead of publishing raw velocity commands.
+with Nav2 `Spin` and `DriveOnHeading` actions instead of publishing raw velocity
+commands.
 
 The package name follows the current folder name. The ROS node and service use
 the clearer `palette_docking_no_camera` naming:
@@ -51,6 +52,21 @@ The request may also contain `{"enabled": true}` or `{"enabled": false}`.
 
 ## Runtime Behavior
 
+The node does not call Nav2 `FollowPath`. Docking is intentionally executed as a
+small sequence of primitive Nav2 behavior actions:
+
+```text
+WAIT_FOR_TAG
+  -> optional RETREAT
+  -> PLANNING
+  -> APPROACH_PREFINAL: Spin + DriveOnHeading
+  -> ALIGN_TO_PALLET: Spin
+  -> FINAL_DOCK: DriveOnHeading
+  -> DONE
+```
+
+Detailed flow:
+
 1. The service receives `start` and starts a worker thread. The service returns
    immediately with the current status while the motion continues in the node.
 2. The node looks up `target_frame -> tag_frame` TF. With the default config it
@@ -58,25 +74,54 @@ The request may also contain `{"enabled": true}` or `{"enabled": false}`.
    smallest initial angle in the docking frame.
 3. In `reverse` mode the tag vector is interpreted like the old
    `palette_docking` controller: the pallet is approached along negative
-   `base_link.x`.
+   `base_link.x`. This matches the forklift geometry where the forks are behind
+   `base_link`.
 4. If the pallet distance is smaller than `close_distance_threshold_m`, the
-   robot first drives away from the pallet by `retreat_distance_m` using Nav2
+   robot first drives away from the pallet by `retreat_distance_m` using
    `DriveOnHeading`.
-5. The node computes a prefinal point in `global_frame`. This point lies on the
+5. The node computes a prefinal point in `global_frame`. The point lies on the
    current robot-to-pallet line and is
    `prefinal_distance_from_pallet_m` before the pallet tag.
-6. The node publishes the prefinal path to `path_topic` and RViz markers to
-   `marker_topic`. Markers include the pallet tag point, current robot point,
-   prefinal point, path line, and expected prefinal heading.
-7. The robot spins toward the prefinal segment with Nav2 `Spin`.
-8. The robot drives to the prefinal point. Short segments use
-   `DriveOnHeading`; longer segments use Nav2 `FollowPath`.
-9. At the prefinal point the node optionally refreshes the tag TF, computes the
-   final docking yaw, and spins to face the pallet in the configured docking
-   direction.
-10. The robot drives straight under the pallet by `final_drive_distance_m` using
-    Nav2 `DriveOnHeading`. In default `reverse` mode this command uses negative
-    `target.x` and negative speed.
+6. The node publishes the computed prefinal line to `path_topic` and RViz
+   markers to `marker_topic`. This path is visualization only; it is not sent to
+   Nav2 `FollowPath`.
+7. For the prefinal segment the node calls `Spin` to align the robot with the
+   straight drive direction. In `reverse` mode the requested yaw is flipped by
+   pi, so `base_link.x` points away from the pallet and the rear forks face the
+   pallet.
+8. After the spin, the node calls `DriveOnHeading` for
+   `plan.segment_distance`. In `reverse` mode this uses negative `target.x` and
+   negative speed, so the robot drives backwards to the prefinal point.
+9. At the prefinal point the node refreshes the tag TF if possible, computes the
+   final docking yaw from the current robot pose to the pallet tag, and calls
+   `Spin` again.
+10. The node calls `DriveOnHeading` for `final_drive_distance_m` to drive
+    straight under the pallet. In default `reverse` mode this final motion is
+    also backwards.
+
+The practical consequence is that docking no longer depends on the Nav2 path
+controller, regulated pure pursuit, goal checkers, or collision monitor velocity
+polygon coverage for a generated path. The only motion commands sent to Nav2 are
+turn-by-angle and drive-straight-by-distance.
+
+## Main Parameters
+
+- `dock_motion_mode`: `reverse` by default. Use this for the forklift because
+  the forks are behind `base_link`.
+- `tag_frame`: explicit pallet tag frame. Empty means auto-select from
+  `tag_frame_candidates`.
+- `prefinal_distance_from_pallet_m`: distance from pallet tag to the prefinal
+  stop point.
+- `final_drive_distance_m`: straight final entry distance under the pallet.
+- `close_distance_threshold_m`: if the pallet is closer than this, retreat
+  first.
+- `retreat_distance_m`: retreat distance before replanning when too close.
+- `max_initial_angle_rad`: rejects docking if the initially selected tag needs
+  too much heading correction.
+- `yaw_tolerance_rad`: spin skip threshold.
+- `retreat_speed_mps`, `prefinal_drive_speed_mps`,
+  `final_drive_speed_mps`: speeds for the three `DriveOnHeading` stages.
+- `spin_timeout_sec`, `drive_timeout_sec`: action result timeouts.
 
 ## RViz Topics
 

@@ -22,9 +22,11 @@
   <depend>nav2_regulated_pure_pursuit_controller</depend>
   <depend>nav2_costmap_2d</depend>
   <depend>rviz2</depend>
+  <depend>rqt_robot_steering</depend>
   <depend>tf2_ros</depend>
   <depend>apriltag_detector</depend>
   <depend>palette_docking</depend>
+  <depend>paette_docking_no_camera</depend>
   <depend>navigation_forklift</depend>
   <depend>cmd_vel_arcestrator</depend>
   <depend>robot_control_core</depend>

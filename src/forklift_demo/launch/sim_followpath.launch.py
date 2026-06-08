@@ -33,11 +33,15 @@ def generate_launch_description() -> LaunchDescription:
     rviz_share = get_package_share_directory("rviz")
     apriltag_share = get_package_share_directory("apriltag_detector")
     palette_docking_share = get_package_share_directory("palette_docking")
+    palette_docking_no_camera_share = get_package_share_directory(
+        "paette_docking_no_camera"
+    )
     ros_gz_sim_share = get_package_share_directory("ros_gz_sim")
 
     use_sim_time = LaunchConfiguration("use_sim_time")
     launch_rviz = LaunchConfiguration("launch_rviz")
     launch_gz_gui = LaunchConfiguration("launch_gz_gui")
+    launch_robot_steering = LaunchConfiguration("launch_robot_steering")
     launch_yasmin_viewer = LaunchConfiguration("launch_yasmin_viewer")
     yasmin_viewer_host = LaunchConfiguration("yasmin_viewer_host")
     yasmin_viewer_port = LaunchConfiguration("yasmin_viewer_port")
@@ -45,6 +49,7 @@ def generate_launch_description() -> LaunchDescription:
     launch_apriltag_detection_monitor = LaunchConfiguration(
         "launch_apriltag_detection_monitor"
     )
+    enable_cmd_vel_arcestrator = LaunchConfiguration("enable_cmd_vel_arcestrator")
     enable_cmd_vel_to_motors = LaunchConfiguration("enable_cmd_vel_to_motors")
     world = LaunchConfiguration("world")
     x = LaunchConfiguration("x")
@@ -91,6 +96,11 @@ def generate_launch_description() -> LaunchDescription:
     )
     pallet_docking_params = os.path.join(
         palette_docking_share, "config", "pallet_docking_controller.yaml"
+    )
+    palette_docking_no_camera_params = os.path.join(
+        palette_docking_no_camera_share,
+        "config",
+        "palette_docking_no_camera.yaml",
     )
 
     robot_description = ParameterValue(
@@ -221,6 +231,7 @@ def generate_launch_description() -> LaunchDescription:
             name="cmd_vel_arcestrator",
             output="screen",
             parameters=[cmd_vel_arcestrator_params, {"use_sim_time": use_sim_time}],
+            condition=IfCondition(enable_cmd_vel_arcestrator),
         ),
         Node(
             package="robot_control_core",
@@ -293,6 +304,16 @@ def generate_launch_description() -> LaunchDescription:
             parameters=[pallet_docking_params, {"use_sim_time": use_sim_time}],
         ),
         Node(
+            package="paette_docking_no_camera",
+            executable="palette_docking_no_camera",
+            name="palette_docking_no_camera",
+            output="screen",
+            parameters=[
+                palette_docking_no_camera_params,
+                {"use_sim_time": use_sim_time},
+            ],
+        ),
+        Node(
             package="rviz",
             executable="json_map_visualizer",
             name="json_map_visualizer",
@@ -330,6 +351,27 @@ def generate_launch_description() -> LaunchDescription:
                     arguments=["-d", rviz_config],
                     parameters=[{"use_sim_time": use_sim_time}],
                     condition=IfCondition(launch_rviz),
+                )
+            ],
+        ),
+        TimerAction(
+            period=3.0,
+            actions=[
+                Node(
+                    package="rqt_robot_steering",
+                    executable="rqt_robot_steering",
+                    name="rqt_robot_steering",
+                    output="screen",
+                    parameters=[
+                        {
+                            "default_topic": "/cmd_vel",
+                            "default_vx_min": -0.85,
+                            "default_vx_max": 0.85,
+                            "default_vw_min": -1.0,
+                            "default_vw_max": 1.0,
+                        }
+                    ],
+                    condition=IfCondition(launch_robot_steering),
                 )
             ],
         ),
@@ -376,6 +418,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("launch_rviz", default_value="false"),
             DeclareLaunchArgument("launch_gz_gui", default_value="true"),
+            DeclareLaunchArgument("launch_robot_steering", default_value="false"),
             DeclareLaunchArgument("launch_yasmin_viewer", default_value="false"),
             DeclareLaunchArgument("yasmin_viewer_host", default_value="127.0.0.1"),
             DeclareLaunchArgument("yasmin_viewer_port", default_value="5000"),
@@ -383,6 +426,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "launch_apriltag_detection_monitor", default_value="false"
             ),
+            DeclareLaunchArgument("enable_cmd_vel_arcestrator", default_value="true"),
             DeclareLaunchArgument("enable_cmd_vel_to_motors", default_value="true"),
             DeclareLaunchArgument(
                 "world",

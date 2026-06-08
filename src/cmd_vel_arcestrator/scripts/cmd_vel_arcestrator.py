@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import math
 from dataclasses import dataclass
 from typing import Optional
 
@@ -42,6 +43,9 @@ class CmdVelArcestrator(Node):
         self.declare_parameter("publish_rate_hz", 30.0)
         self.declare_parameter("source_timeout_sec", 0.25)
         self.declare_parameter("status_publish_period_sec", 1.0)
+        self.declare_parameter("default_source", "")
+        self.declare_parameter("max_linear_speed_mps", 1.0)
+        self.declare_parameter("max_angular_speed_radps", 0.8)
         self.declare_parameter("pallet_docking_topic", "/cmd_vel_pallet_docking")
         self.declare_parameter("charging_docking_topic", "/cmd_vel_charging_docking")
         self.declare_parameter("manual_topic", "/cmd_vel_manual")
@@ -57,6 +61,14 @@ class CmdVelArcestrator(Node):
         self._status_period = max(
             0.0, float(self.get_parameter("status_publish_period_sec").value)
         )
+        self._default_max_linear_speed = self._non_negative_parameter(
+            "max_linear_speed_mps"
+        )
+        self._default_max_angular_speed = self._non_negative_parameter(
+            "max_angular_speed_radps"
+        )
+        self._max_linear_speed = self._default_max_linear_speed
+        self._max_angular_speed = self._default_max_angular_speed
 
         self._sources = {
             "pallet_docking": SourceState(
@@ -70,9 +82,11 @@ class CmdVelArcestrator(Node):
                 str(self.get_parameter("navigation_topic").value)
             ),
         }
-        self._selected_source: Optional[str] = None
-        self._stopped = True
+        default_source = self._default_source_from_parameter()
+        self._selected_source: Optional[str] = default_source
+        self._stopped = default_source is None
         self._last_output_source = "stop"
+        self._last_output_limited = False
         self._last_status_at: Optional[Time] = None
 
         self._cmd_vel_pub = self.create_publisher(Twist, output_topic, 10)
@@ -91,7 +105,8 @@ class CmdVelArcestrator(Node):
 
         self.get_logger().info(
             "cmd_vel_arcestrator ready: output=%s control=%s status=%s "
-            "sources=%s timeout=%.3fs"
+            "sources=%s timeout=%.3fs default_source=%s stopped=%s "
+            "max_linear=%.3fm/s max_angular=%.3frad/s"
             % (
                 output_topic,
                 control_service,
@@ -101,6 +116,10 @@ class CmdVelArcestrator(Node):
                     for name, state in self._sources.items()
                 ),
                 self._source_timeout,
+                self._selected_source or "<none>",
+                self._stopped,
+                self._max_linear_speed,
+                self._max_angular_speed,
             )
         )
 
@@ -165,12 +184,39 @@ class CmdVelArcestrator(Node):
             self.get_logger().info(
                 "cmd_vel arcestrator released: source=%s" % self._selected_source
             )
+        elif command in {"set_limits", "set_speed_limits", "set_speed_limit"}:
+            try:
+                self._update_speed_limits(payload)
+            except ValueError as exc:
+                response.success = False
+                response.message = json.dumps(
+                    {"error": "invalid_limits", "details": str(exc)}
+                )
+                return response
+            response.success = True
+            self.get_logger().info(
+                "cmd_vel speed limits updated: max_linear=%.3fm/s "
+                "max_angular=%.3frad/s"
+                % (self._max_linear_speed, self._max_angular_speed)
+            )
+        elif command in {"reset_limits", "reset_speed_limits"}:
+            self._max_linear_speed = self._default_max_linear_speed
+            self._max_angular_speed = self._default_max_angular_speed
+            response.success = True
+            self.get_logger().info(
+                "cmd_vel speed limits reset: max_linear=%.3fm/s "
+                "max_angular=%.3frad/s"
+                % (self._max_linear_speed, self._max_angular_speed)
+            )
         else:
             response.success = False
             response.message = json.dumps(
                 {
                     "error": "invalid_command",
-                    "details": "expected select_source|stop|release|status",
+                    "details": (
+                        "expected select_source|stop|release|status|"
+                        "set_limits|reset_limits"
+                    ),
                 }
             )
             return response
@@ -182,6 +228,7 @@ class CmdVelArcestrator(Node):
     def _control_tick(self) -> None:
         if self._stopped or self._selected_source is None:
             self._last_output_source = "stop"
+            self._last_output_limited = False
             self._publish_stop()
             self._publish_status()
             return
@@ -189,17 +236,132 @@ class CmdVelArcestrator(Node):
         source = self._sources[self._selected_source]
         if source.last_msg is None or self._source_is_stale(source):
             self._last_output_source = "stale:%s" % self._selected_source
+            self._last_output_limited = False
             self._publish_stop()
             self._publish_status()
             return
 
+        output_msg, limited = self._apply_speed_limits(source.last_msg)
         self._last_output_source = self._selected_source
-        self._cmd_vel_pub.publish(source.last_msg)
+        self._last_output_limited = limited
+        self._cmd_vel_pub.publish(output_msg)
         self._publish_status()
 
     def _normalize_source(self, raw_source) -> Optional[str]:
         source = str(raw_source or "").strip().lower()
         return SOURCE_ALIASES.get(source)
+
+    def _default_source_from_parameter(self) -> Optional[str]:
+        raw_source = str(self.get_parameter("default_source").value or "").strip()
+        if not raw_source:
+            return None
+
+        source = self._normalize_source(raw_source)
+        if source is None:
+            raise ValueError(
+                "default_source must be empty or one of: %s"
+                % ", ".join(SOURCES)
+            )
+        return source
+
+    def _non_negative_parameter(self, name: str) -> float:
+        value = float(self.get_parameter(name).value)
+        if value < 0.0:
+            raise ValueError("%s must be non-negative" % name)
+        return value
+
+    def _update_speed_limits(self, payload: dict) -> None:
+        next_linear = self._max_linear_speed
+        next_angular = self._max_angular_speed
+        changed = False
+
+        raw_linear = self._first_present(
+            payload,
+            (
+                "max_linear_speed_mps",
+                "linear_speed_mps",
+                "linear_limit_mps",
+                "max_linear",
+                "linear",
+            ),
+        )
+        if raw_linear is not None:
+            next_linear = self._non_negative_float(raw_linear, "max_linear_speed_mps")
+            changed = True
+
+        raw_angular = self._first_present(
+            payload,
+            (
+                "max_angular_speed_radps",
+                "angular_speed_radps",
+                "angular_limit_radps",
+                "max_angular",
+                "angular",
+            ),
+        )
+        if raw_angular is not None:
+            next_angular = self._non_negative_float(
+                raw_angular, "max_angular_speed_radps"
+            )
+            changed = True
+
+        if not changed:
+            raise ValueError(
+                "provide max_linear_speed_mps and/or max_angular_speed_radps"
+            )
+
+        self._max_linear_speed = next_linear
+        self._max_angular_speed = next_angular
+
+    def _first_present(self, payload: dict, keys) -> Optional[object]:
+        for key in keys:
+            if key in payload:
+                return payload[key]
+        return None
+
+    def _non_negative_float(self, raw_value, field_name: str) -> float:
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("%s must be a number" % field_name) from exc
+        if value < 0.0:
+            raise ValueError("%s must be non-negative" % field_name)
+        return value
+
+    def _apply_speed_limits(self, msg: Twist) -> tuple[Twist, bool]:
+        limited = False
+        output = Twist()
+        output.linear.x = float(msg.linear.x)
+        output.linear.y = float(msg.linear.y)
+        output.linear.z = float(msg.linear.z)
+        output.angular.x = float(msg.angular.x)
+        output.angular.y = float(msg.angular.y)
+        output.angular.z = float(msg.angular.z)
+
+        linear_speed = math.hypot(output.linear.x, output.linear.y)
+        if linear_speed > self._max_linear_speed:
+            scale = 0.0
+            if linear_speed > 0.0 and self._max_linear_speed > 0.0:
+                scale = self._max_linear_speed / linear_speed
+            output.linear.x *= scale
+            output.linear.y *= scale
+            limited = True
+
+        angular_z = self._clamp_scalar(
+            output.angular.z, self._max_angular_speed
+        )
+        if angular_z != output.angular.z:
+            output.angular.z = angular_z
+            limited = True
+
+        return output, limited
+
+    def _clamp_scalar(self, value: float, limit: float) -> float:
+        if value > limit:
+            return limit
+        if value < -limit:
+            return -limit
+        return value
 
     def _source_is_stale(self, source: SourceState) -> bool:
         if self._source_timeout <= 0.0:
@@ -234,7 +396,12 @@ class CmdVelArcestrator(Node):
             "stopped": self._stopped,
             "selected_source": self._selected_source or "",
             "output_source": self._last_output_source,
+            "output_limited": self._last_output_limited,
             "source_timeout_sec": self._source_timeout,
+            "speed_limits": {
+                "max_linear_speed_mps": self._max_linear_speed,
+                "max_angular_speed_radps": self._max_angular_speed,
+            },
             "sources": {
                 name: {
                     "topic": source.topic,

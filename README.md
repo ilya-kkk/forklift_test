@@ -62,6 +62,25 @@ Docker:
 docker compose up --build sim
 ```
 
+Этот запуск поднимает Gazebo и `cmd_vel_arcestrator`. `rqt_robot_steering` по
+умолчанию отключен, чтобы debug-publisher не перебивал `/cmd_vel`.
+
+```bash
+docker compose up --build sim
+```
+
+Запустить со steering GUI для ручной отладки:
+
+```bash
+LAUNCH_ROBOT_STEERING=true docker compose up --build sim
+```
+
+Отдельно открыть steering GUI напрямую в `/cmd_vel` без перезапуска sim:
+
+```bash
+docker compose --profile tools up rqt
+```
+
 ## Полезные сервисы
 
 - JSON карта: `/robot_data/map/get_map`

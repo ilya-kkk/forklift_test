@@ -9,7 +9,7 @@ import rclpy
 from action_msgs.msg import GoalStatus
 from forklift_interfaces.srv import StringWithJson
 from geometry_msgs.msg import Point, PoseStamped, TransformStamped
-from nav2_msgs.action import DriveOnHeading, FollowPath, Spin
+from nav2_msgs.action import DriveOnHeading, Spin
 from nav_msgs.msg import Path
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
@@ -47,8 +47,6 @@ class PalletObservation:
     tag_x: float
     tag_y: float
     tag_z: float
-    approach_x: float
-    approach_y: float
     distance: float
     angle: float
     age_sec: float
@@ -94,22 +92,16 @@ class PaletteDockingNoCamera(Node):
         self.declare_parameter("max_initial_angle_rad", 1.2)
         self.declare_parameter("prefinal_xy_tolerance_m", 0.05)
         self.declare_parameter("yaw_tolerance_rad", 0.05)
-        self.declare_parameter("follow_path_action_name", "follow_path")
         self.declare_parameter("spin_action_name", "spin")
         self.declare_parameter("drive_on_heading_action_name", "drive_on_heading")
-        self.declare_parameter("controller_id", "FollowPath")
-        self.declare_parameter("goal_checker_id", "goal_checker")
-        self.declare_parameter("progress_checker_id", "")
         self.declare_parameter("path_topic", "/palette_docking_no_camera/path")
         self.declare_parameter("marker_topic", "/palette_docking_no_camera/markers")
         self.declare_parameter("action_server_timeout_sec", 5.0)
-        self.declare_parameter("follow_timeout_sec", 60.0)
         self.declare_parameter("spin_timeout_sec", 20.0)
         self.declare_parameter("drive_timeout_sec", 20.0)
         self.declare_parameter("retreat_speed_mps", 0.12)
         self.declare_parameter("prefinal_drive_speed_mps", 0.20)
         self.declare_parameter("final_drive_speed_mps", 0.16)
-        self.declare_parameter("short_prefinal_drive_threshold_m", 0.35)
         self.declare_parameter("marker_lifetime_sec", 0.0)
         self.declare_parameter("start_enabled", False)
 
@@ -158,7 +150,6 @@ class PaletteDockingNoCamera(Node):
         self._action_server_timeout = self._param_float(
             "action_server_timeout_sec", minimum=0.0
         )
-        self._follow_timeout = self._param_float("follow_timeout_sec", minimum=0.0)
         self._spin_timeout = self._param_float("spin_timeout_sec", minimum=0.0)
         self._drive_timeout = self._param_float("drive_timeout_sec", minimum=0.0)
         self._retreat_speed = self._param_float("retreat_speed_mps", minimum=0.01)
@@ -168,15 +159,7 @@ class PaletteDockingNoCamera(Node):
         self._final_drive_speed = self._param_float(
             "final_drive_speed_mps", minimum=0.01
         )
-        self._short_prefinal_drive_threshold = self._param_float(
-            "short_prefinal_drive_threshold_m", minimum=0.0
-        )
         self._marker_lifetime = self._param_float("marker_lifetime_sec", minimum=0.0)
-        self._controller_id = str(self.get_parameter("controller_id").value)
-        self._goal_checker_id = str(self.get_parameter("goal_checker_id").value)
-        self._progress_checker_id = str(
-            self.get_parameter("progress_checker_id").value
-        )
 
         path_qos = QoSProfile(
             depth=1,
@@ -197,9 +180,6 @@ class PaletteDockingNoCamera(Node):
         )
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
-        self._follow_path_client = ActionClient(
-            self, FollowPath, str(self.get_parameter("follow_path_action_name").value)
-        )
         self._spin_client = ActionClient(
             self, Spin, str(self.get_parameter("spin_action_name").value)
         )
@@ -348,25 +328,26 @@ class PaletteDockingNoCamera(Node):
                 self._store_observation(observation)
                 self._check_cancelled()
 
-            self._set_state(PLANNING, "building prefinal path")
+            self._set_state(PLANNING, "building docking geometry")
             robot_pose = self._lookup_robot_pose()
             plan = self._build_plan(observation, robot_pose, options, retreat_required)
             self._store_plan(plan)
-            path = self._build_prefinal_path(robot_pose, plan)
-            self._publish_visualization(robot_pose, plan, path)
+            visual_path = self._build_prefinal_visual_path(robot_pose, plan)
+            self._publish_visualization(robot_pose, plan, visual_path)
 
             if plan.segment_distance > self._prefinal_xy_tolerance:
                 self._set_state(APPROACH_PREFINAL, "going to prefinal point")
-                self._spin_to_yaw(plan.segment_yaw, robot_pose.yaw, "prefinal segment")
-                if plan.segment_distance <= self._short_prefinal_drive_threshold:
-                    self._drive_on_heading(
-                        plan.segment_distance,
-                        1.0,
-                        self._prefinal_drive_speed,
-                        label="short prefinal segment",
-                    )
-                else:
-                    self._follow_path(path)
+                self._spin_to_yaw(
+                    self._motion_yaw(plan.segment_yaw),
+                    robot_pose.yaw,
+                    "prefinal segment",
+                )
+                self._drive_on_heading(
+                    plan.segment_distance,
+                    self._motion_sign,
+                    self._prefinal_drive_speed,
+                    label="prefinal segment",
+                )
             else:
                 self.get_logger().info(
                     "Prefinal point already reached: distance=%.3f tol=%.3f"
@@ -527,8 +508,6 @@ class PaletteDockingNoCamera(Node):
             tag_x=tag_x,
             tag_y=tag_y,
             tag_z=float(translation.z),
-            approach_x=approach_x,
-            approach_y=approach_y,
             distance=math.hypot(approach_x, approach_y),
             angle=math.atan2(approach_y, approach_x),
             age_sec=age_sec,
@@ -620,7 +599,9 @@ class PaletteDockingNoCamera(Node):
             retreat_required=retreat_required,
         )
 
-    def _build_prefinal_path(self, robot_pose: RobotPose, plan: DockPlan) -> Path:
+    def _build_prefinal_visual_path(
+        self, robot_pose: RobotPose, plan: DockPlan
+    ) -> Path:
         path = Path()
         path.header.frame_id = self._global_frame
         path.header.stamp = self.get_clock().now().to_msg()
@@ -628,7 +609,11 @@ class PaletteDockingNoCamera(Node):
         start_pose = self._pose_stamped(
             robot_pose.x,
             robot_pose.y,
-            plan.segment_yaw if plan.segment_distance > 1e-6 else robot_pose.yaw,
+            (
+                self._motion_yaw(plan.segment_yaw)
+                if plan.segment_distance > 1e-6
+                else robot_pose.yaw
+            ),
             path.header,
         )
         prefinal_pose = self._pose_stamped(
@@ -662,6 +647,11 @@ class PaletteDockingNoCamera(Node):
         if self._motion_mode == "reverse":
             yaw_to_pallet += math.pi
         return self._normalize_angle(yaw_to_pallet)
+
+    def _motion_yaw(self, travel_yaw: float) -> float:
+        if self._motion_mode == "reverse":
+            travel_yaw += math.pi
+        return self._normalize_angle(travel_yaw)
 
     def _spin_to_yaw(self, target_yaw: float, current_yaw: float, label: str) -> None:
         delta_yaw = self._normalize_angle(target_yaw - current_yaw)
@@ -709,30 +699,6 @@ class PaletteDockingNoCamera(Node):
         )
         self._send_action_goal_and_wait(
             self._drive_client, goal, timeout_sec=timeout, label="DriveOnHeading"
-        )
-
-    def _follow_path(self, path: Path) -> None:
-        if not self._follow_path_client.wait_for_server(
-            timeout_sec=self._action_server_timeout
-        ):
-            raise ValueError("FollowPath action server is not available")
-
-        self._path_publisher.publish(path)
-        goal = FollowPath.Goal()
-        goal.path = path
-        goal.controller_id = self._controller_id
-        goal.goal_checker_id = self._goal_checker_id
-        if self._progress_checker_id and hasattr(goal, "progress_checker_id"):
-            goal.progress_checker_id = self._progress_checker_id
-
-        path_length = self._path_length(path)
-        timeout = max(self._follow_timeout, self._drive_action_timeout(path_length, 0.1))
-        self.get_logger().info(
-            "FollowPath to prefinal: poses=%d length=%.3fm timeout=%.1fs"
-            % (len(path.poses), path_length, timeout)
-        )
-        self._send_action_goal_and_wait(
-            self._follow_path_client, goal, timeout_sec=timeout, label="FollowPath"
         )
 
     def _send_action_goal_and_wait(
@@ -904,9 +870,9 @@ class PaletteDockingNoCamera(Node):
         }
 
     def _publish_visualization(
-        self, robot_pose: RobotPose, plan: DockPlan, path: Path
+        self, robot_pose: RobotPose, plan: DockPlan, visual_path: Path
     ) -> None:
-        self._path_publisher.publish(path)
+        self._path_publisher.publish(visual_path)
         markers = MarkerArray()
         markers.markers.append(self._delete_all_marker())
         markers.markers.append(
@@ -942,7 +908,7 @@ class PaletteDockingNoCamera(Node):
                 0.14,
             )
         )
-        markers.markers.append(self._path_marker(path))
+        markers.markers.append(self._visual_path_marker(visual_path))
         markers.markers.append(
             self._arrow_marker(
                 "palette_docking_no_camera_heading",
@@ -1021,7 +987,7 @@ class PaletteDockingNoCamera(Node):
         self._set_color(marker, color)
         return marker
 
-    def _path_marker(self, path: Path) -> Marker:
+    def _visual_path_marker(self, path: Path) -> Marker:
         marker = self._base_marker("palette_docking_no_camera_path", 1)
         marker.type = Marker.LINE_STRIP
         marker.scale.x = 0.045
@@ -1107,16 +1073,6 @@ class PaletteDockingNoCamera(Node):
             robot_pose.x + cos_yaw * base_x - sin_yaw * base_y,
             robot_pose.y + sin_yaw * base_x + cos_yaw * base_y,
         )
-
-    def _path_length(self, path: Path) -> float:
-        if len(path.poses) <= 1:
-            return 0.0
-        total = 0.0
-        for index in range(len(path.poses) - 1):
-            start = path.poses[index].pose.position
-            end = path.poses[index + 1].pose.position
-            total += math.hypot(float(end.x - start.x), float(end.y - start.y))
-        return total
 
     def _drive_action_timeout(self, distance_m: float, speed_mps: float) -> float:
         if distance_m <= 0.0:
