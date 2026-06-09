@@ -48,7 +48,7 @@ collision_monitor:
       velocity_polygons: ["forward", "stopped"]
       forward:
         # Keep the previous slowdown frame only for forward linear motion.
-        points: "[[2.70, 0.80], [2.70, -0.80], [1.38, -0.80], [1.38, 0.80]]"
+        points: "[[2.70, 0.55], [2.70, -0.55], [1.38, -0.55], [1.38, 0.55]]"
         linear_min: 0.05
         linear_max: 2.0
         theta_min: -2.5
