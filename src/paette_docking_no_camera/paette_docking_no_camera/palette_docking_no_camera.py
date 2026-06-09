@@ -8,8 +8,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import rclpy
 from action_msgs.msg import GoalStatus
 from forklift_interfaces.srv import StringWithJson
-from geometry_msgs.msg import Point, PoseStamped, TransformStamped
-from nav2_msgs.action import DriveOnHeading, Spin
+from geometry_msgs.msg import Point, PoseStamped, TransformStamped, Twist
+from nav2_msgs.action import DriveOnHeading
 from nav_msgs.msg import Path
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
@@ -91,14 +91,18 @@ class PaletteDockingNoCamera(Node):
         self.declare_parameter("final_drive_distance_m", 1.0)
         self.declare_parameter("max_initial_angle_rad", 1.2)
         self.declare_parameter("prefinal_xy_tolerance_m", 0.05)
-        self.declare_parameter("yaw_tolerance_rad", 0.05)
-        self.declare_parameter("spin_action_name", "spin")
+        self.declare_parameter("yaw_tolerance_rad", 0.12)
+        self.declare_parameter("yaw_timeout_acceptance_rad", 0.18)
         self.declare_parameter("drive_on_heading_action_name", "drive_on_heading")
+        self.declare_parameter("cmd_vel_topic", "/cmd_vel_nav_raw")
         self.declare_parameter("path_topic", "/palette_docking_no_camera/path")
         self.declare_parameter("marker_topic", "/palette_docking_no_camera/markers")
         self.declare_parameter("action_server_timeout_sec", 5.0)
         self.declare_parameter("spin_timeout_sec", 20.0)
         self.declare_parameter("drive_timeout_sec", 20.0)
+        self.declare_parameter("yaw_angular_speed_radps", 0.35)
+        self.declare_parameter("yaw_linear_assist_mps", 0.03)
+        self.declare_parameter("yaw_control_frequency_hz", 20.0)
         self.declare_parameter("retreat_speed_mps", 0.12)
         self.declare_parameter("prefinal_drive_speed_mps", 0.20)
         self.declare_parameter("final_drive_speed_mps", 0.16)
@@ -147,11 +151,23 @@ class PaletteDockingNoCamera(Node):
             "prefinal_xy_tolerance_m", minimum=0.0
         )
         self._yaw_tolerance = self._param_float("yaw_tolerance_rad", minimum=0.0)
+        self._yaw_timeout_acceptance = self._param_float(
+            "yaw_timeout_acceptance_rad", minimum=self._yaw_tolerance
+        )
         self._action_server_timeout = self._param_float(
             "action_server_timeout_sec", minimum=0.0
         )
         self._spin_timeout = self._param_float("spin_timeout_sec", minimum=0.0)
         self._drive_timeout = self._param_float("drive_timeout_sec", minimum=0.0)
+        self._yaw_angular_speed = self._param_float(
+            "yaw_angular_speed_radps", minimum=0.01
+        )
+        self._yaw_linear_assist = self._param_float(
+            "yaw_linear_assist_mps", minimum=0.0
+        )
+        self._yaw_control_frequency = self._param_float(
+            "yaw_control_frequency_hz", minimum=1.0
+        )
         self._retreat_speed = self._param_float("retreat_speed_mps", minimum=0.01)
         self._prefinal_drive_speed = self._param_float(
             "prefinal_drive_speed_mps", minimum=0.01
@@ -175,14 +191,14 @@ class PaletteDockingNoCamera(Node):
         self._path_publisher = self.create_publisher(
             Path, str(self.get_parameter("path_topic").value), path_qos
         )
+        self._cmd_vel_publisher = self.create_publisher(
+            Twist, str(self.get_parameter("cmd_vel_topic").value), 10
+        )
         self._marker_publisher = self.create_publisher(
             MarkerArray, str(self.get_parameter("marker_topic").value), marker_qos
         )
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
-        self._spin_client = ActionClient(
-            self, Spin, str(self.get_parameter("spin_action_name").value)
-        )
         self._drive_client = ActionClient(
             self,
             DriveOnHeading,
@@ -337,10 +353,13 @@ class PaletteDockingNoCamera(Node):
 
             if plan.segment_distance > self._prefinal_xy_tolerance:
                 self._set_state(APPROACH_PREFINAL, "going to prefinal point")
-                self._spin_to_yaw(
+                self._turn_to_yaw(
                     self._motion_yaw(plan.segment_yaw),
                     robot_pose.yaw,
                     "prefinal segment",
+                )
+                plan = self._refresh_plan_from_observation(
+                    options, retreat_required, "prefinal segment"
                 )
                 self._drive_on_heading(
                     plan.segment_distance,
@@ -361,12 +380,15 @@ class PaletteDockingNoCamera(Node):
                 final_robot_pose, plan, options
             )
             final_yaw = self._docking_yaw(final_robot_pose, pallet_x, pallet_y)
-            self._spin_to_yaw(final_yaw, final_robot_pose.yaw, "pallet alignment")
+            self._turn_to_yaw(final_yaw, final_robot_pose.yaw, "pallet alignment")
+            final_drive_distance = self._final_drive_distance_after_alignment(
+                plan, options
+            )
 
             self._check_cancelled()
             self._set_state(FINAL_DOCK, "driving under pallet")
             self._drive_on_heading(
-                plan.final_drive_distance,
+                final_drive_distance,
                 self._motion_sign,
                 self._final_drive_speed,
                 label="final pallet drive",
@@ -378,7 +400,7 @@ class PaletteDockingNoCamera(Node):
                 "tag_frame": plan.tag_frame,
                 "retreat_required": plan.retreat_required,
                 "prefinal_distance_m": plan.segment_distance,
-                "final_drive_distance_m": plan.final_drive_distance,
+                "final_drive_distance_m": final_drive_distance,
             }
         except DockingCancelled:
             self._set_state(CANCELLED, "docking cancelled")
@@ -653,26 +675,70 @@ class PaletteDockingNoCamera(Node):
             travel_yaw += math.pi
         return self._normalize_angle(travel_yaw)
 
-    def _spin_to_yaw(self, target_yaw: float, current_yaw: float, label: str) -> None:
+    def _turn_to_yaw(self, target_yaw: float, current_yaw: float, label: str) -> None:
         delta_yaw = self._normalize_angle(target_yaw - current_yaw)
         if abs(delta_yaw) <= self._yaw_tolerance:
             self.get_logger().info(
-                "%s spin skipped: delta=%.3f rad tol=%.3f"
+                "%s yaw turn skipped: delta=%.3f rad tol=%.3f"
                 % (label, delta_yaw, self._yaw_tolerance)
             )
             return
-        if not self._spin_client.wait_for_server(
-            timeout_sec=self._action_server_timeout
-        ):
-            raise ValueError("Spin action server is not available")
 
-        goal = Spin.Goal()
-        goal.target_yaw = float(delta_yaw)
-        self._set_duration(goal.time_allowance, self._spin_timeout)
-        self.get_logger().info("%s: spinning by %.3f rad" % (label, delta_yaw))
-        self._send_action_goal_and_wait(
-            self._spin_client, goal, timeout_sec=self._spin_timeout, label="Spin"
+        self.get_logger().info(
+            "%s: yaw turning by %.3f rad angular=%.3f linear_assist=%.3f "
+            "timeout=%.1fs"
+            % (
+                label,
+                delta_yaw,
+                self._yaw_angular_speed,
+                self._yaw_linear_assist,
+                self._spin_timeout,
+            )
         )
+        deadline = (
+            time.monotonic() + self._spin_timeout if self._spin_timeout > 0.0 else None
+        )
+        period = 1.0 / self._yaw_control_frequency
+        try:
+            while rclpy.ok():
+                self._check_cancelled()
+                robot_pose = self._lookup_robot_pose()
+                delta_yaw = self._normalize_angle(target_yaw - robot_pose.yaw)
+                if abs(delta_yaw) <= self._yaw_tolerance:
+                    self.get_logger().info(
+                        "%s yaw reached: current=%.3f target=%.3f delta=%.3f"
+                        % (label, robot_pose.yaw, target_yaw, delta_yaw)
+                    )
+                    return
+
+                if deadline is not None and time.monotonic() > deadline:
+                    if abs(delta_yaw) <= self._yaw_timeout_acceptance:
+                        self.get_logger().warn(
+                            "%s yaw turn timed out near target; accepting "
+                            "current=%.3f target=%.3f delta=%.3f acceptance=%.3f"
+                            % (
+                                label,
+                                robot_pose.yaw,
+                                target_yaw,
+                                delta_yaw,
+                                self._yaw_timeout_acceptance,
+                            )
+                        )
+                        return
+                    raise ValueError(
+                        "%s yaw turn timed out: current=%.3f target=%.3f delta=%.3f"
+                        % (label, robot_pose.yaw, target_yaw, delta_yaw)
+                    )
+
+                twist = Twist()
+                twist.linear.x = -self._motion_sign * self._yaw_linear_assist
+                twist.angular.z = math.copysign(self._yaw_angular_speed, delta_yaw)
+                self._cmd_vel_publisher.publish(twist)
+                time.sleep(period)
+        finally:
+            self._publish_stop()
+
+        raise DockingCancelled()
 
     def _drive_on_heading(
         self, distance_m: float, direction_sign: float, speed_mps: float, *, label: str
@@ -700,6 +766,51 @@ class PaletteDockingNoCamera(Node):
         self._send_action_goal_and_wait(
             self._drive_client, goal, timeout_sec=timeout, label="DriveOnHeading"
         )
+
+    def _final_drive_distance_after_alignment(
+        self, plan: DockPlan, options: Dict[str, Any]
+    ) -> float:
+        distance = plan.final_drive_distance
+        observation = self._lookup_pallet_observation(options)
+        if observation is None:
+            return distance
+
+        self._store_observation(observation)
+        refreshed = max(distance, observation.distance)
+        if refreshed > distance + 1e-3:
+            self.get_logger().info(
+                "final pallet drive distance adjusted from %.3f to %.3f using "
+                "latest tag distance"
+                % (distance, refreshed)
+            )
+        return refreshed
+
+    def _refresh_plan_from_observation(
+        self, options: Dict[str, Any], retreat_required: bool, label: str
+    ) -> DockPlan:
+        observation = self._lookup_pallet_observation(options)
+        if observation is None:
+            with self._lock:
+                current_plan = self._last_plan
+            if current_plan is None:
+                raise ValueError("cannot refresh docking plan: no pallet tag TF")
+            self.get_logger().warn(
+                "%s: pallet TF unavailable after yaw turn; using previous plan"
+                % label
+            )
+            return current_plan
+
+        self._store_observation(observation)
+        robot_pose = self._lookup_robot_pose()
+        plan = self._build_plan(observation, robot_pose, options, retreat_required)
+        self._store_plan(plan)
+        visual_path = self._build_prefinal_visual_path(robot_pose, plan)
+        self._publish_visualization(robot_pose, plan, visual_path)
+        self.get_logger().info(
+            "%s: refreshed docking geometry distance=%.3f angle=%.3f"
+            % (label, plan.segment_distance, observation.angle)
+        )
+        return plan
 
     def _send_action_goal_and_wait(
         self,
@@ -1081,6 +1192,9 @@ class PaletteDockingNoCamera(Node):
         if self._drive_timeout <= 0.0:
             return nominal
         return max(self._drive_timeout, nominal)
+
+    def _publish_stop(self) -> None:
+        self._cmd_vel_publisher.publish(Twist())
 
     def _transform_age_sec(self, transform: TransformStamped) -> float:
         now = self.get_clock().now()

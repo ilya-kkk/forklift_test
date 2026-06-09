@@ -2,9 +2,8 @@
 
 `paette_docking_no_camera` is a Nav2-based pallet docking module. It reads the
 AprilTag TF that is already published by the AprilTag detector stack, builds a
-small docking plan, publishes visualization into RViz, and executes the plan
-with Nav2 `Spin` and `DriveOnHeading` actions instead of publishing raw velocity
-commands.
+small docking plan, publishes visualization into RViz, turns with a bounded yaw
+loop, and executes straight segments with Nav2 `DriveOnHeading`.
 
 The package name follows the current folder name. The ROS node and service use
 the clearer `palette_docking_no_camera` naming:
@@ -53,14 +52,14 @@ The request may also contain `{"enabled": true}` or `{"enabled": false}`.
 ## Runtime Behavior
 
 The node does not call Nav2 `FollowPath`. Docking is intentionally executed as a
-small sequence of primitive Nav2 behavior actions:
+small sequence of yaw turns and primitive Nav2 drive actions:
 
 ```text
 WAIT_FOR_TAG
   -> optional RETREAT
   -> PLANNING
-  -> APPROACH_PREFINAL: Spin + DriveOnHeading
-  -> ALIGN_TO_PALLET: Spin
+  -> APPROACH_PREFINAL: yaw turn + DriveOnHeading
+  -> ALIGN_TO_PALLET: yaw turn
   -> FINAL_DOCK: DriveOnHeading
   -> DONE
 ```
@@ -85,24 +84,29 @@ Detailed flow:
 6. The node publishes the computed prefinal line to `path_topic` and RViz
    markers to `marker_topic`. This path is visualization only; it is not sent to
    Nav2 `FollowPath`.
-7. For the prefinal segment the node calls `Spin` to align the robot with the
-   straight drive direction. In `reverse` mode the requested yaw is flipped by
-   pi, so `base_link.x` points away from the pallet and the rear forks face the
-   pallet.
-8. After the spin, the node calls `DriveOnHeading` for
+7. For the prefinal segment the node turns with a bounded yaw loop published to
+   `cmd_vel_topic`. The yaw loop may include a small rolling assist so the
+   simulated steered wheel can change angle while moving. In `reverse` mode the
+   requested yaw is flipped by pi, so `base_link.x` points away from the pallet
+   and the rear forks face the pallet.
+8. After the yaw turn, the node refreshes the pallet TF and recomputes the
+   prefinal segment, then calls `DriveOnHeading` for
    `plan.segment_distance`. In `reverse` mode this uses negative `target.x` and
    negative speed, so the robot drives backwards to the prefinal point.
 9. At the prefinal point the node refreshes the tag TF if possible, computes the
-   final docking yaw from the current robot pose to the pallet tag, and calls
-   `Spin` again.
-10. The node calls `DriveOnHeading` for `final_drive_distance_m` to drive
-    straight under the pallet. In default `reverse` mode this final motion is
-    also backwards.
+   final docking yaw from the current robot pose to the pallet tag, and runs the
+   same bounded yaw loop again.
+10. Before final entry, the node refreshes the tag distance once more. If the
+    yaw rolling assist moved the robot farther away, the final drive distance is
+    increased to at least the latest tag distance.
+11. The node calls `DriveOnHeading` to drive straight under the pallet. In
+    default `reverse` mode this final motion is also backwards.
 
 The practical consequence is that docking no longer depends on the Nav2 path
-controller, regulated pure pursuit, goal checkers, or collision monitor velocity
-polygon coverage for a generated path. The only motion commands sent to Nav2 are
-turn-by-angle and drive-straight-by-distance.
+controller, regulated pure pursuit, goal checkers, or Nav2 `Spin` result
+completion. Straight-line distances still use Nav2 `DriveOnHeading`; yaw turns
+go through the normal `/cmd_vel_nav_raw -> collision_monitor -> cmd_vel_arcestrator`
+velocity chain.
 
 ## Main Parameters
 
@@ -118,10 +122,20 @@ turn-by-angle and drive-straight-by-distance.
 - `retreat_distance_m`: retreat distance before replanning when too close.
 - `max_initial_angle_rad`: rejects docking if the initially selected tag needs
   too much heading correction.
-- `yaw_tolerance_rad`: spin skip threshold.
+- `yaw_tolerance_rad`: yaw turn completion/skip threshold.
+- `yaw_timeout_acceptance_rad`: if a yaw turn times out but the remaining yaw is
+  below this value, the node logs a warning and continues instead of failing.
+- `cmd_vel_topic`: topic for docking yaw turns, default `/cmd_vel_nav_raw`.
+- `yaw_angular_speed_radps`: bounded angular speed for yaw turns.
+- `yaw_linear_assist_mps`: small away-from-pallet linear velocity during yaw
+  turns. It helps the Gazebo steering joint move because the wheel is allowed to
+  roll while changing steering angle. Keep this below the forward stop polygon
+  threshold in `collision_monitor_params.yaml`; the default is `0.03`.
+- `yaw_control_frequency_hz`: control loop rate for yaw turns.
 - `retreat_speed_mps`, `prefinal_drive_speed_mps`,
   `final_drive_speed_mps`: speeds for the three `DriveOnHeading` stages.
-- `spin_timeout_sec`, `drive_timeout_sec`: action result timeouts.
+- `spin_timeout_sec`: yaw turn timeout. `drive_timeout_sec`: `DriveOnHeading`
+  action result timeout.
 
 ## RViz Topics
 
