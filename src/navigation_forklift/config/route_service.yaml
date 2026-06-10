@@ -21,7 +21,7 @@ route_service:
     yaw_tolerance: 0.05
     path_alignment_min_segment_length: 0.35
     yaw_angular_speed: 0.35
-    yaw_timeout_sec: 0.0
+    yaw_timeout_sec: 20.0
     yaw_control_frequency: 20.0
     short_route_threshold_m: 1.0
     short_route_speed_mps: 0.2

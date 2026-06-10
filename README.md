@@ -59,7 +59,7 @@ ros2 launch forklift_demo sim_followpath.launch.py launch_yasmin_viewer:=true
 Docker:
 
 ```bash
-docker compose up --build sim
+sudo docker compose up --build 
 ```
 
 Этот запуск поднимает Gazebo и `cmd_vel_arcestrator`. `rqt_robot_steering` по

@@ -237,6 +237,7 @@ class CmdVelToMotors(Node):
             wheel_velocity = self._gate_wheel_start_until_aligned(
                 target_steering_angle=steering_angle,
                 requested_wheel_velocity=wheel_velocity,
+                force_alignment=self._is_pure_rotation_command(self._latest_cmd),
             )
 
         self._last_steering_angle = steering_angle
@@ -245,14 +246,21 @@ class CmdVelToMotors(Node):
         self._last_wheel_velocity_cmd = wheel_velocity
 
     def _gate_wheel_start_until_aligned(
-        self, *, target_steering_angle: float, requested_wheel_velocity: float
+        self,
+        *,
+        target_steering_angle: float,
+        requested_wheel_velocity: float,
+        force_alignment: bool = False,
     ) -> float:
         if abs(requested_wheel_velocity) <= self._motion_epsilon:
             return 0.0
-        if not self._require_steering_alignment:
+        if not self._require_steering_alignment and not force_alignment:
             return requested_wheel_velocity
-        # Enforce steering alignment only when starting wheel rotation from zero.
-        if abs(self._last_wheel_velocity_cmd) > self._motion_epsilon:
+        # Normal driving only gates on start; pure rotation must wait for steering.
+        if (
+            not force_alignment
+            and abs(self._last_wheel_velocity_cmd) > self._motion_epsilon
+        ):
             return requested_wheel_velocity
         if self._current_steering_angle is None:
             self._log_alignment_wait("waiting for first steering state")
@@ -274,6 +282,13 @@ class CmdVelToMotors(Node):
             self._log_alignment_wait("steering error %.4f rad" % steering_error)
             return 0.0
         return requested_wheel_velocity
+
+    def _is_pure_rotation_command(self, message: Twist) -> bool:
+        return (
+            abs(float(message.linear.x)) <= self._motion_mode_linear_deadband
+            and abs(float(message.linear.y)) <= self._motion_mode_linear_deadband
+            and abs(float(message.angular.z)) > self._motion_epsilon
+        )
 
     def _log_alignment_wait(self, reason: str) -> None:
         now = self.get_clock().now()
