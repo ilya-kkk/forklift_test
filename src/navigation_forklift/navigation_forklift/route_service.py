@@ -54,6 +54,7 @@ class RouteServiceNode(Node):
         self.declare_parameter("yaw_angular_speed", 0.35)
         self.declare_parameter("yaw_timeout_sec", 60.0)
         self.declare_parameter("goal_yaw_timeout_sec", 90.0)
+        self.declare_parameter("goal_yaw_timeout_acceptance", 0.10)
         self.declare_parameter("yaw_linear_assist_mps", 0.03)
         self.declare_parameter("yaw_control_frequency", 20.0)
         self.declare_parameter("short_route_threshold_m", 1.0)
@@ -101,6 +102,10 @@ class RouteServiceNode(Node):
         )
         self._goal_yaw_timeout_sec = max(
             0.0, float(self.get_parameter("goal_yaw_timeout_sec").value)
+        )
+        self._goal_yaw_timeout_acceptance = max(
+            self._yaw_tolerance,
+            float(self.get_parameter("goal_yaw_timeout_acceptance").value),
         )
         self._yaw_linear_assist_mps = max(
             0.0, float(self.get_parameter("yaw_linear_assist_mps").value)
@@ -1083,6 +1088,22 @@ class RouteServiceNode(Node):
                 return True
 
             if deadline is not None and time.monotonic() > deadline:
+                if (
+                    label == "goal yaw"
+                    and abs(delta_yaw) <= self._goal_yaw_timeout_acceptance
+                ):
+                    self._publish_stop()
+                    self.get_logger().warn(
+                        "%s timed out near target; accepting current=%.3f target=%.3f delta=%.3f acceptance=%.3f"
+                        % (
+                            label,
+                            current_yaw,
+                            target_yaw,
+                            delta_yaw,
+                            self._goal_yaw_timeout_acceptance,
+                        )
+                    )
+                    return True
                 self._publish_stop()
                 self.get_logger().error(
                     "%s rotation timed out: current=%.3f target=%.3f"

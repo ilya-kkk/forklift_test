@@ -59,7 +59,10 @@ palette_docking_no_camera:
     max_initial_angle_rad: 1.2
     prefinal_xy_tolerance_m: 0.05
     yaw_tolerance_rad: 0.12
-    yaw_timeout_acceptance_rad: 0.18
+    yaw_timeout_acceptance_rad: 0.35
+    dock_longitudinal_tolerance_m: 0.15
+    dock_lateral_tolerance_m: 0.10
+    dock_pose_yaw_tolerance_rad: 0.10
 
     drive_on_heading_action_name: drive_on_heading
     cmd_vel_topic: /cmd_vel_nav_raw

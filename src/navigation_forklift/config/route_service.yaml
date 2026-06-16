@@ -23,6 +23,7 @@ route_service:
     yaw_angular_speed: 0.35
     yaw_timeout_sec: 60.0
     goal_yaw_timeout_sec: 90.0
+    goal_yaw_timeout_acceptance: 0.10
     yaw_linear_assist_mps: 0.03
     yaw_control_frequency: 20.0
     short_route_threshold_m: 1.0

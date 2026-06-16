@@ -92,7 +92,10 @@ class PaletteDockingNoCamera(Node):
         self.declare_parameter("max_initial_angle_rad", 1.2)
         self.declare_parameter("prefinal_xy_tolerance_m", 0.05)
         self.declare_parameter("yaw_tolerance_rad", 0.12)
-        self.declare_parameter("yaw_timeout_acceptance_rad", 0.18)
+        self.declare_parameter("yaw_timeout_acceptance_rad", 0.35)
+        self.declare_parameter("dock_longitudinal_tolerance_m", 0.15)
+        self.declare_parameter("dock_lateral_tolerance_m", 0.10)
+        self.declare_parameter("dock_pose_yaw_tolerance_rad", 0.10)
         self.declare_parameter("drive_on_heading_action_name", "drive_on_heading")
         self.declare_parameter("cmd_vel_topic", "/cmd_vel_nav_raw")
         self.declare_parameter("path_topic", "/palette_docking_no_camera/path")
@@ -153,6 +156,15 @@ class PaletteDockingNoCamera(Node):
         self._yaw_tolerance = self._param_float("yaw_tolerance_rad", minimum=0.0)
         self._yaw_timeout_acceptance = self._param_float(
             "yaw_timeout_acceptance_rad", minimum=self._yaw_tolerance
+        )
+        self._dock_longitudinal_tolerance = self._param_float(
+            "dock_longitudinal_tolerance_m", minimum=0.0
+        )
+        self._dock_lateral_tolerance = self._param_float(
+            "dock_lateral_tolerance_m", minimum=0.0
+        )
+        self._dock_pose_yaw_tolerance = self._param_float(
+            "dock_pose_yaw_tolerance_rad", minimum=0.0
         )
         self._action_server_timeout = self._param_float(
             "action_server_timeout_sec", minimum=0.0
@@ -387,12 +399,54 @@ class PaletteDockingNoCamera(Node):
 
             self._check_cancelled()
             self._set_state(FINAL_DOCK, "driving under pallet")
-            self._drive_on_heading(
-                final_drive_distance,
-                self._motion_sign,
-                self._final_drive_speed,
-                label="final pallet drive",
+            final_pose_eval = None
+            try:
+                self._drive_on_heading(
+                    final_drive_distance,
+                    self._motion_sign,
+                    self._final_drive_speed,
+                    label="final pallet drive",
+                )
+            except ValueError as exc:
+                final_pose_eval = self._evaluate_final_dock_pose(plan)
+                if (
+                    "DriveOnHeading result timed out" in str(exc)
+                    and final_pose_eval["accepted"]
+                ):
+                    self.get_logger().warn(
+                        "final pallet drive timed out but dock pose is within "
+                        "tolerance: longitudinal=%.3f lateral=%.3f yaw=%.3f"
+                        % (
+                            final_pose_eval["longitudinal_error_m"],
+                            final_pose_eval["lateral_error_m"],
+                            final_pose_eval["yaw_error_rad"],
+                        )
+                    )
+                else:
+                    raise
+
+            if final_pose_eval is None:
+                final_pose_eval = self._evaluate_final_dock_pose(plan)
+            self.get_logger().info(
+                "final dock pose check: longitudinal=%.3f lateral=%.3f yaw=%.3f "
+                "accepted=%s"
+                % (
+                    final_pose_eval["longitudinal_error_m"],
+                    final_pose_eval["lateral_error_m"],
+                    final_pose_eval["yaw_error_rad"],
+                    str(final_pose_eval["accepted"]).lower(),
+                )
             )
+            if not final_pose_eval["accepted"]:
+                raise ValueError(
+                    "final dock pose is outside tolerance: longitudinal=%.3f "
+                    "lateral=%.3f yaw=%.3f"
+                    % (
+                        final_pose_eval["longitudinal_error_m"],
+                        final_pose_eval["lateral_error_m"],
+                        final_pose_eval["yaw_error_rad"],
+                    )
+                )
 
             self._set_state(DONE, "docking sequence finished")
             result = {
@@ -401,6 +455,7 @@ class PaletteDockingNoCamera(Node):
                 "retreat_required": plan.retreat_required,
                 "prefinal_distance_m": plan.segment_distance,
                 "final_drive_distance_m": final_drive_distance,
+                "final_pose_eval": final_pose_eval,
             }
         except DockingCancelled:
             self._set_state(CANCELLED, "docking cancelled")
@@ -1188,10 +1243,46 @@ class PaletteDockingNoCamera(Node):
     def _drive_action_timeout(self, distance_m: float, speed_mps: float) -> float:
         if distance_m <= 0.0:
             return self._drive_timeout
-        nominal = distance_m / max(0.01, speed_mps) + 5.0
+        # In this stack the effective reverse DriveOnHeading progress is much
+        # slower than the requested speed because steering, wheel conversion,
+        # and collision filtering all reduce the realized motion. Use a
+        # conservative envelope so we do not cancel a still-progressing dock.
+        nominal = distance_m / max(0.01, speed_mps) * 4.0 + 5.0
         if self._drive_timeout <= 0.0:
             return nominal
         return max(self._drive_timeout, nominal)
+
+    def _evaluate_final_dock_pose(self, plan: DockPlan) -> Dict[str, Any]:
+        robot_pose = self._lookup_robot_pose()
+        axis_x = plan.pallet_x - plan.prefinal_x
+        axis_y = plan.pallet_y - plan.prefinal_y
+        axis_length = math.hypot(axis_x, axis_y)
+        if axis_length <= 1e-6:
+            axis_x = math.cos(plan.segment_yaw)
+            axis_y = math.sin(plan.segment_yaw)
+            axis_length = math.hypot(axis_x, axis_y)
+        axis_x /= axis_length
+        axis_y /= axis_length
+
+        dx = robot_pose.x - plan.pallet_x
+        dy = robot_pose.y - plan.pallet_y
+        longitudinal_error = dx * axis_x + dy * axis_y
+        lateral_error = -dx * axis_y + dy * axis_x
+        yaw_error = abs(self._normalize_angle(robot_pose.yaw - plan.prefinal_yaw))
+        accepted = (
+            abs(longitudinal_error) <= self._dock_longitudinal_tolerance
+            and abs(lateral_error) <= self._dock_lateral_tolerance
+            and yaw_error <= self._dock_pose_yaw_tolerance
+        )
+        return {
+            "accepted": accepted,
+            "robot_x": robot_pose.x,
+            "robot_y": robot_pose.y,
+            "robot_yaw": robot_pose.yaw,
+            "longitudinal_error_m": longitudinal_error,
+            "lateral_error_m": lateral_error,
+            "yaw_error_rad": yaw_error,
+        }
 
     def _publish_stop(self) -> None:
         self._cmd_vel_publisher.publish(Twist())
