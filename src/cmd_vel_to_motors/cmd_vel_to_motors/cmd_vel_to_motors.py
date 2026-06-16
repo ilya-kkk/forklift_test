@@ -237,7 +237,10 @@ class CmdVelToMotors(Node):
             wheel_velocity = self._gate_wheel_start_until_aligned(
                 target_steering_angle=steering_angle,
                 requested_wheel_velocity=wheel_velocity,
-                force_alignment=self._is_pure_rotation_command(self._latest_cmd),
+                force_alignment=(
+                    self._require_steering_alignment
+                    and self._is_pure_rotation_command(self._latest_cmd)
+                ),
             )
 
         self._last_steering_angle = steering_angle
@@ -256,7 +259,8 @@ class CmdVelToMotors(Node):
             return 0.0
         if not self._require_steering_alignment and not force_alignment:
             return requested_wheel_velocity
-        # Normal driving only gates on start; pure rotation must wait for steering.
+        # Normal driving only gates on start; forced alignment keeps pure rotation
+        # waiting for steering when steering alignment is enabled.
         if (
             not force_alignment
             and abs(self._last_wheel_velocity_cmd) > self._motion_epsilon

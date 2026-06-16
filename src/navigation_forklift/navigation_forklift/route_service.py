@@ -52,7 +52,9 @@ class RouteServiceNode(Node):
         self.declare_parameter("yaw_tolerance", 0.05)
         self.declare_parameter("path_alignment_min_segment_length", 0.35)
         self.declare_parameter("yaw_angular_speed", 0.35)
-        self.declare_parameter("yaw_timeout_sec", 20.0)
+        self.declare_parameter("yaw_timeout_sec", 60.0)
+        self.declare_parameter("goal_yaw_timeout_sec", 90.0)
+        self.declare_parameter("yaw_linear_assist_mps", 0.03)
         self.declare_parameter("yaw_control_frequency", 20.0)
         self.declare_parameter("short_route_threshold_m", 1.0)
         self.declare_parameter("short_route_speed_mps", 0.2)
@@ -96,6 +98,12 @@ class RouteServiceNode(Node):
         )
         self._yaw_timeout_sec = max(
             0.0, float(self.get_parameter("yaw_timeout_sec").value)
+        )
+        self._goal_yaw_timeout_sec = max(
+            0.0, float(self.get_parameter("goal_yaw_timeout_sec").value)
+        )
+        self._yaw_linear_assist_mps = max(
+            0.0, float(self.get_parameter("yaw_linear_assist_mps").value)
         )
         self._yaw_control_frequency = max(
             1.0, float(self.get_parameter("yaw_control_frequency").value)
@@ -145,7 +153,7 @@ class RouteServiceNode(Node):
 
         self.get_logger().info(
             "Route service ready: route=%s move_to=%s revers_move_to=%s status=%s map=%s follow_path=%s spin=%s drive_on_heading=%s "
-            "path_topic=%s cmd_vel=%s align_min_seg=%.2f short_route_threshold=%.2f short_speed=%.2f json_graph=true"
+            "path_topic=%s cmd_vel=%s align_min_seg=%.2f short_route_threshold=%.2f short_speed=%.2f goal_yaw_timeout=%.1f json_graph=true"
             % (
                 route_service_name,
                 move_to_service_name,
@@ -160,6 +168,7 @@ class RouteServiceNode(Node):
                 self._path_alignment_min_segment_length,
                 self._short_route_threshold_m,
                 self._short_route_speed_mps,
+                self._goal_yaw_timeout_sec,
             )
         )
 
@@ -429,7 +438,11 @@ class RouteServiceNode(Node):
         else:
             self.get_logger().info("Route execution skipped: already at drive goal")
 
-        if goal_yaw is not None and not self._rotate_to_yaw(goal_yaw, "goal yaw"):
+        if goal_yaw is not None and not self._rotate_to_yaw(
+            goal_yaw,
+            "goal yaw",
+            timeout_sec=self._goal_yaw_timeout_sec,
+        ):
             return False
 
         self.get_logger().info(
@@ -488,12 +501,19 @@ class RouteServiceNode(Node):
                 "ReversMoveTo following final edge backwards, poses=%d"
                 % len(reverse_path.poses)
             )
-            if not self._follow_path(reverse_path, motion_mode="reverse"):
+            if not self._follow_path(
+                reverse_path,
+                motion_mode="reverse",
+            ):
                 return False
         else:
             self.get_logger().info("ReversMoveTo skipped: already at drive goal")
 
-        if goal_yaw is not None and not self._rotate_to_yaw(goal_yaw, "goal yaw"):
+        if goal_yaw is not None and not self._rotate_to_yaw(
+            goal_yaw,
+            "goal yaw",
+            timeout_sec=self._goal_yaw_timeout_sec,
+        ):
             return False
 
         self.get_logger().info(
@@ -502,10 +522,21 @@ class RouteServiceNode(Node):
         )
         return True
 
-    def _follow_path(self, path: Path, *, motion_mode: str) -> bool:
+    def _follow_path(
+        self,
+        path: Path,
+        *,
+        motion_mode: str,
+        heading_yaw: Optional[float] = None,
+    ) -> bool:
         path_length = self._path_length(path)
         if path_length < self._short_route_threshold_m:
-            return self._drive_short_route(path, path_length, motion_mode=motion_mode)
+            return self._drive_short_route(
+                path,
+                path_length,
+                motion_mode=motion_mode,
+                heading_yaw=heading_yaw,
+            )
 
         if not self._ensure_robot_facing_path(path, motion_mode=motion_mode):
             return False
@@ -526,23 +557,36 @@ class RouteServiceNode(Node):
         return True
 
     def _drive_short_route(
-        self, path: Path, path_length: float, *, motion_mode: str
+        self,
+        path: Path,
+        path_length: float,
+        *,
+        motion_mode: str,
+        heading_yaw: Optional[float] = None,
     ) -> bool:
         goal_xy = self._path_goal_xy(path)
         if goal_xy is None:
             return True
 
         goal_x, goal_y = goal_xy
-        if not self._ensure_robot_facing_point(
-            goal_x,
-            goal_y,
-            motion_mode=motion_mode,
-            label="short route",
-        ):
-            return False
-
         if not self._drive_on_heading_client.wait_for_server(timeout_sec=5.0):
             self.get_logger().error("DriveOnHeading action is not available")
+            return False
+
+        if heading_yaw is not None:
+            aligned = self._ensure_robot_facing_yaw(
+                heading_yaw,
+                motion_mode=motion_mode,
+                label="short route target yaw",
+            )
+        else:
+            aligned = self._ensure_robot_facing_point(
+                goal_x,
+                goal_y,
+                motion_mode=motion_mode,
+                label="short route",
+            )
+        if not aligned:
             return False
 
         try:
@@ -586,6 +630,36 @@ class RouteServiceNode(Node):
             return False
         return True
 
+    def _ensure_robot_facing_yaw(
+        self,
+        target_yaw: float,
+        *,
+        motion_mode: str,
+        label: str,
+    ) -> bool:
+        try:
+            _, _, current_yaw = self._lookup_robot_pose()
+        except ValueError:
+            self.get_logger().error(
+                "Failed to align with %s: robot pose is not available" % label
+            )
+            return False
+
+        delta_yaw = self._normalize_angle(target_yaw - current_yaw)
+        if abs(delta_yaw) <= self._yaw_tolerance:
+            return True
+
+        self.get_logger().info(
+            "Robot is not aligned with %s (%s), yaw turning by %.3f rad"
+            % (label, motion_mode, delta_yaw)
+        )
+        assist_sign = 1.0
+        return self._spin_by_delta_yaw(
+            delta_yaw,
+            "%s alignment" % label,
+            linear_assist_sign=assist_sign,
+        )
+
     def _path_goal_xy(self, path: Path) -> Optional[PathPoint]:
         if not path.poses:
             return None
@@ -625,7 +699,12 @@ class RouteServiceNode(Node):
             "Robot is not aligned with %s (%s), spinning by %.3f rad before DriveOnHeading"
             % (label, motion_mode, delta_yaw)
         )
-        return self._spin_by_delta_yaw(delta_yaw, "%s alignment" % label)
+        assist_sign = 1.0
+        return self._spin_by_delta_yaw(
+            delta_yaw,
+            "%s alignment" % label,
+            linear_assist_sign=assist_sign,
+        )
 
     def _ensure_robot_facing_path(self, path: Path, *, motion_mode: str) -> bool:
         if len(path.poses) <= 1:
@@ -649,30 +728,16 @@ class RouteServiceNode(Node):
         if abs(delta_yaw) <= self._yaw_tolerance:
             return True
 
-        if not self._spin_client.wait_for_server(timeout_sec=5.0):
-            self.get_logger().error("Spin action is not available")
-            return False
-
-        spin_goal = Spin.Goal()
-        spin_goal.target_yaw = float(delta_yaw)
-        spin_goal.time_allowance.sec = int(self._yaw_timeout_sec)
-        spin_goal.time_allowance.nanosec = int(
-            max(0.0, self._yaw_timeout_sec - int(self._yaw_timeout_sec)) * 1e9
-        )
-
         self.get_logger().info(
-            "Robot is not aligned with path (%s), spinning by %.3f rad before FollowPath"
+            "Robot is not aligned with path (%s), yaw turning by %.3f rad before FollowPath"
             % (motion_mode, delta_yaw)
         )
-        spin_result = self._send_action_goal_and_wait(
-            self._spin_client,
-            spin_goal,
-            timeout_sec=self._yaw_timeout_sec,
+        assist_sign = 1.0
+        return self._spin_by_delta_yaw(
+            delta_yaw,
+            "path alignment",
+            linear_assist_sign=assist_sign,
         )
-        if spin_result is None:
-            self.get_logger().error("Spin action failed or timed out")
-            return False
-        return True
 
     def _target_yaw_for_path_alignment(self, path: Path) -> Optional[float]:
         # Use the first meaningful segment so tiny snap-to-nearest segments
@@ -982,14 +1047,23 @@ class RouteServiceNode(Node):
                 ) from exc
         return None
 
-    def _rotate_to_yaw(self, target_yaw: float, label: str) -> bool:
-        deadline = time.monotonic() + self._yaw_timeout_sec
+    def _rotate_to_yaw(
+        self,
+        target_yaw: float,
+        label: str,
+        *,
+        timeout_sec: Optional[float] = None,
+        linear_assist_sign: float = 1.0,
+    ) -> bool:
+        if timeout_sec is None:
+            timeout_sec = self._yaw_timeout_sec
+        deadline = time.monotonic() + timeout_sec if timeout_sec > 0.0 else None
 
         while rclpy.ok():
             try:
                 robot_pose = self._lookup_robot_pose(log_errors=False)
             except ValueError:
-                if self._yaw_timeout_sec > 0.0 and time.monotonic() > deadline:
+                if deadline is not None and time.monotonic() > deadline:
                     self._publish_stop()
                     self.get_logger().error(
                         "%s rotation timed out: robot pose is not available" % label
@@ -1008,7 +1082,7 @@ class RouteServiceNode(Node):
                 )
                 return True
 
-            if self._yaw_timeout_sec > 0.0 and time.monotonic() > deadline:
+            if deadline is not None and time.monotonic() > deadline:
                 self._publish_stop()
                 self.get_logger().error(
                     "%s rotation timed out: current=%.3f target=%.3f"
@@ -1016,45 +1090,83 @@ class RouteServiceNode(Node):
                 )
                 return False
 
-            if not self._spin_by_delta_yaw(delta_yaw, label, deadline):
+            if not self._spin_by_delta_yaw(
+                delta_yaw,
+                label,
+                deadline,
+                linear_assist_sign=linear_assist_sign,
+            ):
                 return False
 
         self._publish_stop()
         return False
 
     def _spin_by_delta_yaw(
-        self, delta_yaw: float, label: str, deadline: Optional[float] = None
+        self,
+        delta_yaw: float,
+        label: str,
+        deadline: Optional[float] = None,
+        *,
+        linear_assist_sign: float = 1.0,
     ) -> bool:
         if abs(delta_yaw) <= self._yaw_tolerance:
             return True
-        if not self._spin_client.wait_for_server(timeout_sec=5.0):
-            self.get_logger().error("Spin action is not available")
+
+        try:
+            _, _, start_yaw = self._lookup_robot_pose()
+        except ValueError:
+            self.get_logger().error("%s yaw turn failed: robot pose is not available" % label)
             return False
 
-        timeout_sec = self._yaw_timeout_sec
-        if deadline is not None and self._yaw_timeout_sec > 0.0:
-            timeout_sec = max(0.0, deadline - time.monotonic())
-        if self._yaw_timeout_sec > 0.0 and timeout_sec <= 0.0:
-            self.get_logger().error("%s spin timed out before goal send" % label)
-            return False
-
-        spin_goal = Spin.Goal()
-        spin_goal.target_yaw = float(delta_yaw)
-        spin_goal.time_allowance.sec = int(timeout_sec)
-        spin_goal.time_allowance.nanosec = int(
-            max(0.0, timeout_sec - int(timeout_sec)) * 1e9
+        target_yaw = self._normalize_angle(start_yaw + delta_yaw)
+        period = 1.0 / self._yaw_control_frequency
+        assist = float(linear_assist_sign) * self._yaw_linear_assist_mps
+        self.get_logger().info(
+            "%s: yaw turning by %.3f rad angular=%.3f linear_assist=%.3f"
+            % (label, delta_yaw, self._yaw_angular_speed, assist)
         )
 
-        self.get_logger().info("%s: spinning by %.3f rad" % (label, delta_yaw))
-        spin_result = self._send_action_goal_and_wait(
-            self._spin_client,
-            spin_goal,
-            timeout_sec=timeout_sec,
-        )
-        if spin_result is None:
-            self.get_logger().error("%s spin failed or timed out" % label)
-            return False
-        return True
+        try:
+            while rclpy.ok():
+                try:
+                    _, _, current_yaw = self._lookup_robot_pose(log_errors=False)
+                except ValueError:
+                    if deadline is not None and time.monotonic() > deadline:
+                        self.get_logger().error(
+                            "%s yaw turn timed out: robot pose is not available"
+                            % label
+                        )
+                        return False
+                    time.sleep(period)
+                    continue
+
+                remaining_yaw = self._normalize_angle(target_yaw - current_yaw)
+                if abs(remaining_yaw) <= self._yaw_tolerance:
+                    self.get_logger().info(
+                        "%s yaw reached: current=%.3f target=%.3f delta=%.3f"
+                        % (label, current_yaw, target_yaw, remaining_yaw)
+                    )
+                    return True
+
+                if deadline is not None and time.monotonic() > deadline:
+                    self.get_logger().error(
+                        "%s yaw turn timed out: current=%.3f target=%.3f delta=%.3f"
+                        % (label, current_yaw, target_yaw, remaining_yaw)
+                    )
+                    return False
+
+                twist = Twist()
+                twist.linear.x = assist
+                twist.angular.z = math.copysign(
+                    self._yaw_angular_speed,
+                    remaining_yaw,
+                )
+                self._cmd_vel_publisher.publish(twist)
+                time.sleep(period)
+        finally:
+            self._publish_stop()
+
+        return False
 
     def _publish_stop(self) -> None:
         self._cmd_vel_publisher.publish(Twist())
