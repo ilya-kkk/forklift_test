@@ -96,8 +96,28 @@ class PaletteDockingNoCamera(Node):
         self.declare_parameter("dock_longitudinal_tolerance_m", 0.15)
         self.declare_parameter("dock_lateral_tolerance_m", 0.10)
         self.declare_parameter("dock_pose_yaw_tolerance_rad", 0.10)
+        self.declare_parameter("dock_camera_frame", "camera_link")
+        self.declare_parameter("dock_target_x_m", 0.10)
+        self.declare_parameter("dock_target_y_m", 0.0)
+        self.declare_parameter("dock_tf_x_tolerance_m", 0.05)
+        self.declare_parameter("dock_tf_y_tolerance_m", 0.05)
+        self.declare_parameter("final_dock_timeout_sec", 120.0)
+        self.declare_parameter("final_dock_lateral_gain", 1.0)
+        self.declare_parameter("final_dock_initial_lateral_gain", 0.1)
+        self.declare_parameter("final_dock_gain_ramp_retreat_m", 0.50)
+        self.declare_parameter("final_dock_max_angular_radps", 0.30)
+        self.declare_parameter("final_dock_alignment_speed_mps", 0.20)
+        self.declare_parameter("final_dock_max_alignment_retreat_m", 0.60)
+        self.declare_parameter("final_dock_abort_lateral_error_m", 0.25)
+        self.declare_parameter("final_dock_tf_rate_hz", 5.0)
+        self.declare_parameter("final_dock_max_tf_lookups", 600)
         self.declare_parameter("drive_on_heading_action_name", "drive_on_heading")
-        self.declare_parameter("cmd_vel_topic", "/cmd_vel_nav_raw")
+        self.declare_parameter("cmd_vel_topic", "/cmd_vel_pallet_docking")
+        self.declare_parameter(
+            "cmd_vel_orchestrator_service", "/cmd_vel_arcestrator/control"
+        )
+        self.declare_parameter("cmd_vel_docking_source", "pallet_docking")
+        self.declare_parameter("cmd_vel_restore_source", "navigation")
         self.declare_parameter("path_topic", "/palette_docking_no_camera/path")
         self.declare_parameter("marker_topic", "/palette_docking_no_camera/markers")
         self.declare_parameter("action_server_timeout_sec", 5.0)
@@ -166,6 +186,48 @@ class PaletteDockingNoCamera(Node):
         self._dock_pose_yaw_tolerance = self._param_float(
             "dock_pose_yaw_tolerance_rad", minimum=0.0
         )
+        self._dock_camera_frame = str(
+            self.get_parameter("dock_camera_frame").value
+        ).strip()
+        self._dock_target_x = float(self.get_parameter("dock_target_x_m").value)
+        self._dock_target_y = float(self.get_parameter("dock_target_y_m").value)
+        self._dock_tf_x_tolerance = self._param_float(
+            "dock_tf_x_tolerance_m", minimum=0.0
+        )
+        self._dock_tf_y_tolerance = self._param_float(
+            "dock_tf_y_tolerance_m", minimum=0.0
+        )
+        self._final_dock_timeout = self._param_float(
+            "final_dock_timeout_sec", minimum=0.0
+        )
+        self._final_dock_lateral_gain = self._param_float(
+            "final_dock_lateral_gain", minimum=0.0
+        )
+        self._final_dock_initial_lateral_gain = self._param_float(
+            "final_dock_initial_lateral_gain", minimum=0.0
+        )
+        self._final_dock_gain_ramp_retreat = self._param_float(
+            "final_dock_gain_ramp_retreat_m", minimum=0.01
+        )
+        self._final_dock_max_angular = self._param_float(
+            "final_dock_max_angular_radps", minimum=0.0
+        )
+        self._final_dock_alignment_speed = self._param_float(
+            "final_dock_alignment_speed_mps", minimum=0.01
+        )
+        self._final_dock_max_alignment_retreat = self._param_float(
+            "final_dock_max_alignment_retreat_m", minimum=0.0
+        )
+        self._final_dock_abort_lateral_error = self._param_float(
+            "final_dock_abort_lateral_error_m",
+            minimum=self._dock_tf_y_tolerance,
+        )
+        self._final_dock_tf_rate = self._param_float(
+            "final_dock_tf_rate_hz", minimum=1.0
+        )
+        self._final_dock_max_tf_lookups = max(
+            1, int(self.get_parameter("final_dock_max_tf_lookups").value)
+        )
         self._action_server_timeout = self._param_float(
             "action_server_timeout_sec", minimum=0.0
         )
@@ -205,6 +267,16 @@ class PaletteDockingNoCamera(Node):
         )
         self._cmd_vel_publisher = self.create_publisher(
             Twist, str(self.get_parameter("cmd_vel_topic").value), 10
+        )
+        self._cmd_vel_docking_source = str(
+            self.get_parameter("cmd_vel_docking_source").value
+        )
+        self._cmd_vel_restore_source = str(
+            self.get_parameter("cmd_vel_restore_source").value
+        )
+        self._orchestrator_client = self.create_client(
+            StringWithJson,
+            str(self.get_parameter("cmd_vel_orchestrator_service").value),
         )
         self._marker_publisher = self.create_publisher(
             MarkerArray, str(self.get_parameter("marker_topic").value), marker_qos
@@ -298,6 +370,8 @@ class PaletteDockingNoCamera(Node):
             self._failure_reason = ""
             self._last_result = {"state": "running"}
             self._state = WAIT_FOR_TAG
+            self._last_observation = None
+            self._last_plan = None
 
         worker = threading.Thread(
             target=self._run_docking_sequence,
@@ -342,120 +416,36 @@ class PaletteDockingNoCamera(Node):
             self._store_observation(observation)
             self._check_cancelled()
             self._validate_initial_observation(observation, options)
-
-            retreat_required = observation.distance < options["close_distance"]
-            if retreat_required and options["retreat_distance"] > 0.0:
-                self._set_state(RETREAT, "pallet is inside close threshold")
-                self._drive_on_heading(
-                    options["retreat_distance"],
-                    -self._motion_sign,
-                    self._retreat_speed,
-                    label="retreat from pallet",
-                )
-                observation = self._wait_for_observation(options)
-                self._store_observation(observation)
-                self._check_cancelled()
-
-            self._set_state(PLANNING, "building docking geometry")
-            robot_pose = self._lookup_robot_pose()
-            plan = self._build_plan(observation, robot_pose, options, retreat_required)
-            self._store_plan(plan)
-            visual_path = self._build_prefinal_visual_path(robot_pose, plan)
-            self._publish_visualization(robot_pose, plan, visual_path)
-
-            if plan.segment_distance > self._prefinal_xy_tolerance:
-                self._set_state(APPROACH_PREFINAL, "going to prefinal point")
-                self._turn_to_yaw(
-                    self._motion_yaw(plan.segment_yaw),
-                    robot_pose.yaw,
-                    "prefinal segment",
-                )
-                plan = self._refresh_plan_from_observation(
-                    options, retreat_required, "prefinal segment"
-                )
-                self._drive_on_heading(
-                    plan.segment_distance,
-                    self._motion_sign,
-                    self._prefinal_drive_speed,
-                    label="prefinal segment",
-                )
-            else:
-                self.get_logger().info(
-                    "Prefinal point already reached: distance=%.3f tol=%.3f"
-                    % (plan.segment_distance, self._prefinal_xy_tolerance)
-                )
-
-            self._check_cancelled()
-            self._set_state(ALIGN_TO_PALLET, "aligning with pallet")
-            final_robot_pose = self._lookup_robot_pose()
-            pallet_x, pallet_y = self._refined_pallet_point(
-                final_robot_pose, plan, options
-            )
-            final_yaw = self._docking_yaw(final_robot_pose, pallet_x, pallet_y)
-            self._turn_to_yaw(final_yaw, final_robot_pose.yaw, "pallet alignment")
-            final_drive_distance = self._final_drive_distance_after_alignment(
-                plan, options
-            )
-
-            self._check_cancelled()
-            self._set_state(FINAL_DOCK, "driving under pallet")
-            final_pose_eval = None
-            try:
-                self._drive_on_heading(
-                    final_drive_distance,
-                    self._motion_sign,
-                    self._final_drive_speed,
-                    label="final pallet drive",
-                )
-            except ValueError as exc:
-                final_pose_eval = self._evaluate_final_dock_pose(plan)
-                if (
-                    "DriveOnHeading result timed out" in str(exc)
-                    and final_pose_eval["accepted"]
-                ):
-                    self.get_logger().warn(
-                        "final pallet drive timed out but dock pose is within "
-                        "tolerance: longitudinal=%.3f lateral=%.3f yaw=%.3f"
-                        % (
-                            final_pose_eval["longitudinal_error_m"],
-                            final_pose_eval["lateral_error_m"],
-                            final_pose_eval["yaw_error_rad"],
-                        )
-                    )
-                else:
-                    raise
-
-            if final_pose_eval is None:
-                final_pose_eval = self._evaluate_final_dock_pose(plan)
+            initial_tf_eval = self._evaluate_final_tag_tf(observation.frame_id)
+            self._select_cmd_vel_source(self._cmd_vel_docking_source)
+            self._set_state(FINAL_DOCK, "camera/tag closed-loop docking")
+            final_tf_eval = self._drive_to_final_tag_tf(observation.frame_id)
             self.get_logger().info(
-                "final dock pose check: longitudinal=%.3f lateral=%.3f yaw=%.3f "
-                "accepted=%s"
+                "final camera/tag check: frame=%s x=%.3f y=%.3f z=%.3f "
+                "x_error=%.3f y_error=%.3f accepted=%s"
                 % (
-                    final_pose_eval["longitudinal_error_m"],
-                    final_pose_eval["lateral_error_m"],
-                    final_pose_eval["yaw_error_rad"],
-                    str(final_pose_eval["accepted"]).lower(),
+                    observation.frame_id,
+                    final_tf_eval["x"],
+                    final_tf_eval["y"],
+                    final_tf_eval["z"],
+                    final_tf_eval["x_error_m"],
+                    final_tf_eval["y_error_m"],
+                    str(final_tf_eval["accepted"]).lower(),
                 )
             )
-            if not final_pose_eval["accepted"]:
-                raise ValueError(
-                    "final dock pose is outside tolerance: longitudinal=%.3f "
-                    "lateral=%.3f yaw=%.3f"
-                    % (
-                        final_pose_eval["longitudinal_error_m"],
-                        final_pose_eval["lateral_error_m"],
-                        final_pose_eval["yaw_error_rad"],
-                    )
-                )
 
             self._set_state(DONE, "docking sequence finished")
             result = {
                 "state": "finished",
-                "tag_frame": plan.tag_frame,
-                "retreat_required": plan.retreat_required,
-                "prefinal_distance_m": plan.segment_distance,
-                "final_drive_distance_m": final_drive_distance,
-                "final_pose_eval": final_pose_eval,
+                "tag_frame": observation.frame_id,
+                "retreat_required": False,
+                "prefinal_distance_m": 0.0,
+                "final_drive_distance_m": max(
+                    0.0, initial_tf_eval["x"] - final_tf_eval["x"]
+                ),
+                "initial_tf_eval": initial_tf_eval,
+                "final_tf_eval": final_tf_eval,
+                "final_pose_eval": None,
             }
         except DockingCancelled:
             self._set_state(CANCELLED, "docking cancelled")
@@ -466,6 +456,14 @@ class PaletteDockingNoCamera(Node):
             result = {"state": "failed", "error": str(exc)}
             self.get_logger().error("Docking sequence failed: %s" % exc)
         finally:
+            self._publish_stop()
+            try:
+                self._select_cmd_vel_source(self._cmd_vel_restore_source)
+            except Exception as exc:  # pragma: no cover - best effort handoff
+                self.get_logger().error(
+                    "Failed to restore cmd_vel source %s: %s"
+                    % (self._cmd_vel_restore_source, exc)
+                )
             with self._lock:
                 self._active_goal_handle = None
                 self._active_thread = None
@@ -525,7 +523,9 @@ class PaletteDockingNoCamera(Node):
 
             if self._wait_for_tag_timeout > 0.0 and time.monotonic() > deadline:
                 raise ValueError("no valid pallet tag TF")
-            time.sleep(0.05)
+            # The detector publishes at 5 Hz. Polling faster only repeats the
+            # same transform and multiplies candidate-frame lookups.
+            time.sleep(0.2)
 
         raise DockingCancelled()
 
@@ -754,6 +754,7 @@ class PaletteDockingNoCamera(Node):
             time.monotonic() + self._spin_timeout if self._spin_timeout > 0.0 else None
         )
         period = 1.0 / self._yaw_control_frequency
+        last_progress_log_at = 0.0
         try:
             while rclpy.ok():
                 self._check_cancelled()
@@ -788,6 +789,21 @@ class PaletteDockingNoCamera(Node):
                 twist = Twist()
                 twist.linear.x = -self._motion_sign * self._yaw_linear_assist
                 twist.angular.z = math.copysign(self._yaw_angular_speed, delta_yaw)
+                now = time.monotonic()
+                if now - last_progress_log_at >= 1.0:
+                    self.get_logger().info(
+                        "%s yaw progress: current=%.3f target=%.3f delta=%.3f "
+                        "linear=%.3f angular=%.3f"
+                        % (
+                            label,
+                            robot_pose.yaw,
+                            target_yaw,
+                            delta_yaw,
+                            twist.linear.x,
+                            twist.angular.z,
+                        )
+                    )
+                    last_progress_log_at = now
                 self._cmd_vel_publisher.publish(twist)
                 time.sleep(period)
         finally:
@@ -1283,6 +1299,369 @@ class PaletteDockingNoCamera(Node):
             "lateral_error_m": lateral_error,
             "yaw_error_rad": yaw_error,
         }
+
+    def _evaluate_final_tag_tf(self, tag_frame: str) -> Dict[str, Any]:
+        try:
+            transform = self._tf_buffer.lookup_transform(
+                self._dock_camera_frame,
+                tag_frame,
+                Time(),
+                timeout=Duration(seconds=self._transform_timeout),
+            )
+        except TransformException as exc:
+            raise ValueError(
+                "final tag TF %s -> %s is not available: %s"
+                % (self._dock_camera_frame, tag_frame, exc)
+            ) from exc
+
+        age_sec = self._transform_age_sec(transform)
+        if self._tag_timeout > 0.0 and age_sec >= 0.0 and age_sec > self._tag_timeout:
+            raise ValueError(
+                "final tag TF is stale: frame=%s age=%.3fs limit=%.3fs"
+                % (tag_frame, age_sec, self._tag_timeout)
+            )
+
+        translation = transform.transform.translation
+        x = float(translation.x)
+        y = float(translation.y)
+        x_error = x - self._dock_target_x
+        y_error = y - self._dock_target_y
+        return {
+            "accepted": (
+                abs(x_error) <= self._dock_tf_x_tolerance
+                and abs(y_error) <= self._dock_tf_y_tolerance
+            ),
+            "camera_frame": self._dock_camera_frame,
+            "tag_frame": tag_frame,
+            "x": x,
+            "y": y,
+            "z": float(translation.z),
+            "x_target_m": self._dock_target_x,
+            "y_target_m": self._dock_target_y,
+            "x_error_m": x_error,
+            "y_error_m": y_error,
+            "x_tolerance_m": self._dock_tf_x_tolerance,
+            "y_tolerance_m": self._dock_tf_y_tolerance,
+            "age_sec": age_sec,
+        }
+
+    def _select_cmd_vel_source(self, source: str) -> None:
+        if not self._orchestrator_client.wait_for_service(timeout_sec=3.0):
+            raise ValueError("cmd_vel orchestrator service is not available")
+        request = StringWithJson.Request()
+        request.message = json.dumps(
+            {"command": "select_source", "source": str(source)}
+        )
+        future = self._orchestrator_client.call_async(request)
+        deadline = time.monotonic() + 3.0
+        while rclpy.ok() and not future.done() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        if not future.done():
+            raise ValueError("cmd_vel orchestrator request timed out")
+        response = future.result()
+        if response is None or not response.success:
+            details = response.message if response is not None else "no response"
+            raise ValueError("cmd_vel orchestrator rejected source: %s" % details)
+        self.get_logger().info("cmd_vel source selected: %s" % source)
+
+    @staticmethod
+    def _rotate_vector_by_quaternion(
+        vector: Tuple[float, float, float],
+        quaternion: Tuple[float, float, float, float],
+    ) -> Tuple[float, float, float]:
+        vx, vy, vz = vector
+        qx, qy, qz, qw = quaternion
+        tx = 2.0 * (qy * vz - qz * vy)
+        ty = 2.0 * (qz * vx - qx * vz)
+        tz = 2.0 * (qx * vy - qy * vx)
+        return (
+            vx + qw * tx + (qy * tz - qz * ty),
+            vy + qw * ty + (qz * tx - qx * tz),
+            vz + qw * tz + (qx * ty - qy * tx),
+        )
+
+    def _anchor_tag_in_global(self, current: Dict[str, Any]) -> Tuple[float, float, float]:
+        try:
+            camera_pose = self._tf_buffer.lookup_transform(
+                self._global_frame,
+                self._dock_camera_frame,
+                Time(),
+                timeout=Duration(seconds=self._lookup_timeout),
+            )
+        except TransformException as exc:
+            raise ValueError("camera pose is not available for tag anchoring: %s" % exc) from exc
+        translation = camera_pose.transform.translation
+        rotation = camera_pose.transform.rotation
+        offset = self._rotate_vector_by_quaternion(
+            (float(current["x"]), float(current["y"]), float(current["z"])),
+            (float(rotation.x), float(rotation.y), float(rotation.z), float(rotation.w)),
+        )
+        return (
+            float(translation.x) + offset[0],
+            float(translation.y) + offset[1],
+            float(translation.z) + offset[2],
+        )
+
+    def _evaluate_anchored_tag(
+        self,
+        tag_frame: str,
+        anchor: Tuple[float, float, float],
+        anchor_age_sec: float,
+    ) -> Dict[str, Any]:
+        try:
+            camera_pose = self._tf_buffer.lookup_transform(
+                self._global_frame,
+                self._dock_camera_frame,
+                Time(),
+                timeout=Duration(seconds=self._lookup_timeout),
+            )
+        except TransformException as exc:
+            raise ValueError("camera pose is not available for anchored docking: %s" % exc) from exc
+        translation = camera_pose.transform.translation
+        rotation = camera_pose.transform.rotation
+        global_delta = (
+            anchor[0] - float(translation.x),
+            anchor[1] - float(translation.y),
+            anchor[2] - float(translation.z),
+        )
+        camera_delta = self._rotate_vector_by_quaternion(
+            global_delta,
+            (-float(rotation.x), -float(rotation.y), -float(rotation.z), float(rotation.w)),
+        )
+        x, y, z = camera_delta
+        x_error = x - self._dock_target_x
+        y_error = y - self._dock_target_y
+        return {
+            "accepted": (
+                abs(x_error) <= self._dock_tf_x_tolerance
+                and abs(y_error) <= self._dock_tf_y_tolerance
+            ),
+            "camera_frame": self._dock_camera_frame,
+            "tag_frame": tag_frame,
+            "x": x,
+            "y": y,
+            "z": z,
+            "x_target_m": self._dock_target_x,
+            "y_target_m": self._dock_target_y,
+            "x_error_m": x_error,
+            "y_error_m": y_error,
+            "x_tolerance_m": self._dock_tf_x_tolerance,
+            "y_tolerance_m": self._dock_tf_y_tolerance,
+            "age_sec": anchor_age_sec,
+            "measurement_source": "map_anchored_tag",
+        }
+
+    def _drive_to_final_tag_tf(self, tag_frame: str) -> Dict[str, Any]:
+        deadline = (
+            time.monotonic() + self._final_dock_timeout
+            if self._final_dock_timeout > 0.0
+            else None
+        )
+        period = 1.0 / self._final_dock_tf_rate
+        last_log_at = 0.0
+        last_eval: Optional[Dict[str, Any]] = None
+        tf_lookup_count = 0
+        anchored_control_cycles = 0
+        tag_anchor: Optional[Tuple[float, float, float]] = None
+        tag_anchor_at = 0.0
+        use_tag_anchor = False
+        alignment_start_x: Optional[float] = None
+        last_control_mode = "starting"
+        last_cmd_linear = 0.0
+        last_cmd_angular = 0.0
+        last_alignment_retreat = 0.0
+        approach_progress_x: Optional[float] = None
+        approach_progress_at = 0.0
+        try:
+            while rclpy.ok():
+                self._check_cancelled()
+                now = time.monotonic()
+                if not use_tag_anchor and tf_lookup_count >= self._final_dock_max_tf_lookups:
+                    raise ValueError(
+                        "final camera/tag TF lookup limit reached: %d"
+                        % tf_lookup_count
+                    )
+                try:
+                    if use_tag_anchor:
+                        anchored_control_cycles += 1
+                        current = self._evaluate_anchored_tag(
+                            tag_frame,
+                            tag_anchor,
+                            max(0.0, now - tag_anchor_at),
+                        )
+                    else:
+                        tf_lookup_count += 1
+                        current = self._evaluate_final_tag_tf(tag_frame)
+                        current["measurement_source"] = "live_apriltag_tf"
+                        tag_anchor = self._anchor_tag_in_global(current)
+                        tag_anchor_at = now
+                    current["tf_lookup_count"] = tf_lookup_count
+                    current["anchored_control_cycles"] = anchored_control_cycles
+                    last_eval = current
+                except ValueError as exc:
+                    if not use_tag_anchor and tag_anchor is not None:
+                        use_tag_anchor = True
+                        self.get_logger().warn(
+                            "live AprilTag TF unavailable; continuing from map anchor "
+                            "after %d tag lookups: %s" % (tf_lookup_count, exc)
+                        )
+                        continue
+                    self._publish_stop()
+                    if deadline is not None and now > deadline:
+                        raise
+                    time.sleep(period)
+                    continue
+
+                if current["accepted"]:
+                    self.get_logger().info(
+                        "final camera/tag accepted: frame=%s x=%.3f y=%.3f "
+                        "source=%s lookups=%d anchored_cycles=%d"
+                        % (
+                            tag_frame,
+                            current["x"],
+                            current["y"],
+                            current.get("measurement_source", "unknown"),
+                            tf_lookup_count,
+                            anchored_control_cycles,
+                        )
+                    )
+                    return current
+
+                if deadline is not None and now > deadline:
+                    raise ValueError(
+                        "final camera/tag target timed out: x=%.3f target=%.3f "
+                        "y=%.3f target=%.3f lookups=%d"
+                        % (
+                            current["x"],
+                            self._dock_target_x,
+                            current["y"],
+                            self._dock_target_y,
+                            tf_lookup_count,
+                        )
+                    )
+
+                twist = Twist()
+                x_error = float(current["x_error_m"])
+                y_error = float(current["y_error_m"])
+                if abs(y_error) > self._final_dock_abort_lateral_error:
+                    raise ValueError(
+                        "final camera/tag lateral error diverged: y=%.3f "
+                        "target=%.3f limit=%.3f lookups=%d"
+                        % (
+                            current["y"],
+                            self._dock_target_y,
+                            self._final_dock_abort_lateral_error,
+                            tf_lookup_count,
+                        )
+                    )
+
+                control_mode = "stop"
+                alignment_retreat = 0.0
+                if abs(y_error) > self._dock_tf_y_tolerance:
+                    approach_progress_x = None
+                    # Correct lateral error with a bounded steering sweep while
+                    # moving away from the pallet. The schedule is tied to the
+                    # measured retreat distance, so a bad steering state cannot
+                    # make the robot keep driving away without limit.
+                    if alignment_start_x is None:
+                        alignment_start_x = float(current["x"])
+                    alignment_retreat = float(current["x"]) - alignment_start_x
+                    if alignment_retreat > self._final_dock_max_alignment_retreat:
+                        raise ValueError(
+                            "lateral alignment retreat limit reached: y=%.3f "
+                            "retreat=%.3f limit=%.3f"
+                            % (
+                                current["y"],
+                                alignment_retreat,
+                                self._final_dock_max_alignment_retreat,
+                            )
+                        )
+                    twist.linear.x = self._final_dock_alignment_speed
+                    twist.angular.z = self._alignment_sweep_angular(
+                        y_error,
+                        max(0.0, alignment_retreat),
+                    )
+                    control_mode = "align_sweep"
+                elif abs(x_error) > self._dock_tf_x_tolerance:
+                    alignment_start_x = None
+                    if approach_progress_x is None:
+                        approach_progress_x = float(current["x"])
+                        approach_progress_at = now
+                    elif float(current["x"]) < approach_progress_x - 0.03:
+                        approach_progress_x = float(current["x"])
+                        approach_progress_at = now
+                    speed = self._final_drive_speed
+                    if abs(x_error) < 0.30:
+                        speed = max(0.04, speed * 0.5)
+                    twist.linear.x = self._motion_sign * math.copysign(speed, x_error)
+                    angular = self._final_dock_lateral_gain * y_error
+                    twist.angular.z = max(
+                        -self._final_dock_max_angular,
+                        min(self._final_dock_max_angular, angular),
+                    )
+                    control_mode = "approach"
+                    if now - approach_progress_at > 4.0:
+                        wiggle = min(self._final_dock_max_angular, 0.04)
+                        phase = int((now - approach_progress_at) / 2.0) % 2
+                        direction = -1.0 if phase == 0 else 1.0
+                        if abs(y_error) > 0.5 * self._dock_tf_y_tolerance:
+                            direction = 1.0 if y_error > 0.0 else -1.0
+                        twist.angular.z = direction * wiggle
+                        control_mode = "approach_wiggle"
+                last_control_mode = control_mode
+                last_cmd_linear = float(twist.linear.x)
+                last_cmd_angular = float(twist.angular.z)
+                last_alignment_retreat = alignment_retreat
+                if now - last_log_at >= 1.0:
+                    self.get_logger().info(
+                        "final camera/tag progress: frame=%s x=%.3f y=%.3f "
+                        "x_error=%.3f y_error=%.3f age=%.3f source=%s "
+                        "mode=%s cmd_x=%.3f cmd_w=%.3f align_retreat=%.3f "
+                        "lookups=%d anchored_cycles=%d"
+                        % (
+                            tag_frame,
+                            current["x"],
+                            current["y"],
+                            current["x_error_m"],
+                            current["y_error_m"],
+                            current["age_sec"],
+                            current.get("measurement_source", "unknown"),
+                            last_control_mode,
+                            last_cmd_linear,
+                            last_cmd_angular,
+                            last_alignment_retreat,
+                            tf_lookup_count,
+                            anchored_control_cycles,
+                        )
+                    )
+                    last_log_at = now
+                self._cmd_vel_publisher.publish(twist)
+                time.sleep(period)
+        finally:
+            self._publish_stop()
+
+        if last_eval is not None:
+            return last_eval
+        raise DockingCancelled()
+
+    def _alignment_sweep_angular(self, y_error: float, retreat_m: float) -> float:
+        if self._final_dock_max_angular <= 0.0:
+            return 0.0
+        sign = 1.0 if y_error > 0.0 else -1.0
+        stages = (
+            (0.52, 1.00),
+            (0.40, 0.75),
+            (0.28, 0.50),
+            (0.16, 0.25),
+            (0.08, 0.00),
+            (0.00, -0.25),
+        )
+        multiplier = stages[-1][1]
+        for threshold, value in stages:
+            if retreat_m >= threshold:
+                multiplier = value
+                break
+        return sign * multiplier * self._final_dock_max_angular
 
     def _publish_stop(self) -> None:
         self._cmd_vel_publisher.publish(Twist())

@@ -1079,11 +1079,21 @@ class RouteServiceNode(Node):
 
             _, _, current_yaw = robot_pose
             delta_yaw = self._normalize_angle(target_yaw - current_yaw)
-            if abs(delta_yaw) <= self._yaw_tolerance:
+            # A small final-heading correction is counterproductive for this
+            # rear-steered chassis: at near-zero speed the steering joint can
+            # move sideways and increase an already acceptable error.  The
+            # goal-specific acceptance was previously considered only after a
+            # full timeout; use it as the actual terminal tolerance instead.
+            yaw_tolerance = (
+                self._goal_yaw_timeout_acceptance
+                if label == "goal yaw"
+                else self._yaw_tolerance
+            )
+            if abs(delta_yaw) <= yaw_tolerance:
                 self._publish_stop()
                 self.get_logger().info(
-                    "%s reached: current=%.3f target=%.3f"
-                    % (label, current_yaw, target_yaw)
+                    "%s reached: current=%.3f target=%.3f tolerance=%.3f"
+                    % (label, current_yaw, target_yaw, yaw_tolerance)
                 )
                 return True
 

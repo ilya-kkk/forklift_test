@@ -57,6 +57,7 @@ class CmdVelToMotors(Node):
         self.declare_parameter("center_steering_on_stop", False)
         self.declare_parameter("joint_states_topic", "/joint_states")
         self.declare_parameter("require_steering_alignment", True)
+        self.declare_parameter("steering_alignment_min_linear_speed_mps", 0.0)
         self.declare_parameter(
             "steering_alignment_tolerance_rad", math.radians(3.0)
         )
@@ -100,6 +101,12 @@ class CmdVelToMotors(Node):
         self._joint_states_topic = str(self.get_parameter("joint_states_topic").value)
         self._require_steering_alignment = bool(
             self.get_parameter("require_steering_alignment").value
+        )
+        self._steering_alignment_min_linear_speed = max(
+            0.0,
+            float(
+                self.get_parameter("steering_alignment_min_linear_speed_mps").value
+            ),
         )
         self._steering_alignment_tolerance_rad = max(
             1e-4, float(self.get_parameter("steering_alignment_tolerance_rad").value)
@@ -237,6 +244,11 @@ class CmdVelToMotors(Node):
             wheel_velocity = self._gate_wheel_start_until_aligned(
                 target_steering_angle=steering_angle,
                 requested_wheel_velocity=wheel_velocity,
+                require_alignment=(
+                    self._require_steering_alignment
+                    and abs(float(self._latest_cmd.linear.x))
+                    >= self._steering_alignment_min_linear_speed
+                ),
                 force_alignment=(
                     self._require_steering_alignment
                     and self._is_pure_rotation_command(self._latest_cmd)
@@ -253,11 +265,12 @@ class CmdVelToMotors(Node):
         *,
         target_steering_angle: float,
         requested_wheel_velocity: float,
+        require_alignment: bool,
         force_alignment: bool = False,
     ) -> float:
         if abs(requested_wheel_velocity) <= self._motion_epsilon:
             return 0.0
-        if not self._require_steering_alignment and not force_alignment:
+        if not require_alignment and not force_alignment:
             return requested_wheel_velocity
         # Normal driving only gates on start; forced alignment keeps pure rotation
         # waiting for steering when steering alignment is enabled.

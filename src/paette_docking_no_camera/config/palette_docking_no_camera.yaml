@@ -58,20 +58,51 @@ palette_docking_no_camera:
     final_drive_distance_m: 1.0
     max_initial_angle_rad: 1.2
     prefinal_xy_tolerance_m: 0.05
-    yaw_tolerance_rad: 0.12
+    # Small heading errors are corrected while moving by the final camera/tag
+    # servo. A near-zero-speed Ackermann turn can put the steering wheel almost
+    # sideways and leave the chassis unable to move near the pallet.
+    yaw_tolerance_rad: 0.35
     yaw_timeout_acceptance_rad: 0.35
     dock_longitudinal_tolerance_m: 0.15
     dock_lateral_tolerance_m: 0.10
     dock_pose_yaw_tolerance_rad: 0.10
+    # Successful docking is defined directly in the detector frame. Z is
+    # reported for diagnostics but deliberately does not participate.
+    dock_camera_frame: camera_link
+    dock_target_x_m: 0.10
+    dock_target_y_m: 0.0
+    dock_tf_x_tolerance_m: 0.05
+    dock_tf_y_tolerance_m: 0.05
+    final_dock_timeout_sec: 120.0
+    final_dock_lateral_gain: 0.5
+    final_dock_initial_lateral_gain: 0.1
+    final_dock_gain_ramp_retreat_m: 0.50
+    final_dock_max_angular_radps: 0.08
+    final_dock_alignment_speed_mps: 0.08
+    final_dock_max_alignment_retreat_m: 0.60
+    # Alignment happens while moving away, so a large transient lateral error
+    # is collision-safe while the rear steering selects a new solution.
+    final_dock_abort_lateral_error_m: 1.20
+    # Bound detector TF load: at most 5 lookups/s and 600 total per attempt.
+    final_dock_tf_rate_hz: 5.0
+    final_dock_max_tf_lookups: 600
 
     drive_on_heading_action_name: drive_on_heading
-    cmd_vel_topic: /cmd_vel_nav_raw
+    # Docking intentionally bypasses the navigation collision monitor; the
+    # pallet is the obstacle being approached. The orchestrator still enforces
+    # global speed limits and restores navigation afterwards.
+    cmd_vel_topic: /cmd_vel_pallet_docking
+    cmd_vel_orchestrator_service: /cmd_vel_arcestrator/control
+    cmd_vel_docking_source: pallet_docking
+    cmd_vel_restore_source: navigation
 
     path_topic: /palette_docking_no_camera/path
     marker_topic: /palette_docking_no_camera/markers
 
     action_server_timeout_sec: 5.0
-    spin_timeout_sec: 20.0
+    # Rear steering can need more than 20 seconds to move from the straight
+    # reverse solution before measured yaw starts converging.
+    spin_timeout_sec: 45.0
     drive_timeout_sec: 20.0
     yaw_angular_speed_radps: 0.35
     yaw_linear_assist_mps: 0.03

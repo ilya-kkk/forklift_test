@@ -19,6 +19,12 @@ cmd_vel_to_motors:
     motion_epsilon: 0.0001
     center_steering_on_stop: false
     joint_states_topic: /joint_states
-    require_steering_alignment: false
+    # Do not apply traction in the previous steering direction while the rear
+    # steering joint is moving to a newly requested solution. This is critical
+    # when switching from route navigation to close-range pallet docking.
+    require_steering_alignment: true
+    # Allow the 0.08 m/s clearance maneuver to develop enough wheel traction;
+    # gate only the faster final pallet-entry transition.
+    steering_alignment_min_linear_speed_mps: 0.09
     steering_alignment_tolerance_rad: 0.05235987755982989
     steering_state_timeout_sec: 0.3
