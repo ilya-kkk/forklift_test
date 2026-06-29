@@ -121,6 +121,16 @@ class RobotModeState(State):
         return ROBOT_SHUTDOWN
 
 
+class DiagramState(State):
+    def __init__(self, outcomes: List[str]) -> None:
+        super().__init__(outcomes)
+        self._default_outcome = outcomes[0] if outcomes else ""
+
+    def execute(self, blackboard: Blackboard) -> str:
+        del blackboard
+        return self._default_outcome
+
+
 class MissionDispatchState(State):
     def __init__(self, core: "RobotControlCore", mode: str) -> None:
         super().__init__(
@@ -389,6 +399,7 @@ class RobotControlCore(Node):
         self._robot_blackboard: Optional[Blackboard] = None
         self._robot_thread: Optional[threading.Thread] = None
         self._mode_fsms: Dict[str, StateMachine] = {}
+        self._architecture_fsms: Dict[str, StateMachine] = {}
         self._mission_fsm: Optional[StateMachine] = None
         self._yasmin_viewer_pubs: Dict[str, Any] = {}
         self._cancel_requested = False
@@ -589,10 +600,206 @@ class RobotControlCore(Node):
     def _terminal_mode_transitions(self) -> Dict[str, str]:
         return {"to_%s" % mode: "to_%s" % mode for mode in OPERATING_MODE_ORDER}
 
+    def _build_architecture_fsms(self) -> Dict[str, StateMachine]:
+        return {
+            "operating_mode_architecture": self._build_diagram_fsm(
+                "operating_mode_architecture",
+                "PROCESS_START",
+                [
+                    ("PROCESS_START", "STARTUP"),
+                    ("STARTUP", "AUTOMATIC"),
+                    ("AUTOMATIC", "STARTUP"),
+                    ("STARTUP", "SEMIAUTOMATIC"),
+                    ("SEMIAUTOMATIC", "STARTUP"),
+                    ("STARTUP", "INTERVENED"),
+                    ("INTERVENED", "STARTUP"),
+                    ("STARTUP", "MANUAL"),
+                    ("MANUAL", "STARTUP"),
+                    ("STARTUP", "SERVICE"),
+                    ("SERVICE", "STARTUP"),
+                    ("STARTUP", "TEACH_IN"),
+                    ("TEACH_IN", "STARTUP"),
+                ],
+            ),
+            "automatic_mode_architecture": self._build_diagram_fsm(
+                "automatic_mode_architecture",
+                "AUTO_ENTRY",
+                [
+                    ("AUTO_ENTRY", "AUTO_READY"),
+                    ("AUTO_READY", "AUTO_ORDER"),
+                    ("AUTO_ORDER", "ORDER_ENTRY"),
+                ],
+            ),
+            "semiautomatic_mode_architecture": self._build_diagram_fsm(
+                "semiautomatic_mode_architecture",
+                "SEMI_ENTRY",
+                [
+                    ("SEMI_ENTRY", "SEMI_APPROVAL"),
+                    ("SEMI_APPROVAL", "SEMI_ORDER"),
+                    ("SEMI_ORDER", "ORDER_ENTRY"),
+                ],
+            ),
+            "intervened_mode_architecture": self._build_diagram_fsm(
+                "intervened_mode_architecture",
+                "INTERVENED_ENTRY",
+                [
+                    ("INTERVENED_ENTRY", "INTERVENED_PAUSE"),
+                    ("INTERVENED_PAUSE", "INTERVENED_WAIT"),
+                    ("INTERVENED_PAUSE", "ORDER_PAUSED"),
+                ],
+            ),
+            "manual_mode_architecture": self._build_diagram_fsm(
+                "manual_mode_architecture",
+                "MANUAL_ENTRY",
+                [
+                    ("MANUAL_ENTRY", "MANUAL_STOP_ORDER"),
+                    ("MANUAL_STOP_ORDER", "MANUAL_SOURCE"),
+                    ("MANUAL_SOURCE", "MANUAL_DRIVE"),
+                ],
+            ),
+            "service_mode_architecture": self._build_diagram_fsm(
+                "service_mode_architecture",
+                "SERVICE_ENTRY",
+                [
+                    ("SERVICE_ENTRY", "SERVICE_SAFE"),
+                    ("SERVICE_SAFE", "SERVICE_TODO"),
+                ],
+            ),
+            "teach_in_mode_architecture": self._build_diagram_fsm(
+                "teach_in_mode_architecture",
+                "TEACH_ENTRY",
+                [("TEACH_ENTRY", "TEACH_TODO")],
+            ),
+            "order_fsm": self._build_diagram_fsm(
+                "order_fsm",
+                "ORDER_ENTRY",
+                [
+                    ("ORDER_ENTRY", "ORDER_IDLE"),
+                    ("ORDER_IDLE", "ORDER_ACCEPT"),
+                    ("ORDER_ACCEPT", "ORDER_MOVE"),
+                    ("ORDER_MOVE", "ORDER_ACTION_SELECT"),
+                    ("ORDER_ACTION_SELECT", "CHARGE_START"),
+                    ("ORDER_ACTION_SELECT", "PICK_START"),
+                    ("ORDER_ACTION_SELECT", "DROP_START"),
+                    ("CHARGE_START", "ORDER_ACTION_DONE"),
+                    ("PICK_START", "ORDER_ACTION_DONE"),
+                    ("DROP_START", "ORDER_ACTION_DONE"),
+                    ("ORDER_ACTION_DONE", "ORDER_NEXT"),
+                    ("ORDER_NEXT", "ORDER_MOVE"),
+                    ("ORDER_NEXT", "ORDER_WAIT_BASE"),
+                    ("ORDER_WAIT_BASE", "ORDER_MOVE"),
+                    ("ORDER_NEXT", "ORDER_DONE"),
+                    ("ORDER_DONE", "ORDER_IDLE"),
+                    ("ORDER_MOVE", "ORDER_PAUSED"),
+                    ("ORDER_ACTION_SELECT", "ORDER_PAUSED"),
+                    ("ORDER_PAUSED", "ORDER_MOVE"),
+                    ("ORDER_IDLE", "ORDER_CANCEL"),
+                    ("ORDER_MOVE", "ORDER_CANCEL"),
+                    ("ORDER_PAUSED", "ORDER_CANCEL"),
+                    ("ORDER_FAILED", "ORDER_CANCEL"),
+                    ("ORDER_CANCEL", "ORDER_IDLE"),
+                ],
+            ),
+            "start_charging_action": self._build_diagram_fsm(
+                "start_charging_action",
+                "CHARGE_START",
+                [
+                    ("CHARGE_START", "CHARGE_VERIFY"),
+                    ("CHARGE_VERIFY", "CHARGE_ENABLE"),
+                    ("CHARGE_ENABLE", "CHARGE_WAIT"),
+                    ("CHARGE_WAIT", "CHARGE_DONE"),
+                    ("CHARGE_WAIT", "CHARGE_FAILED"),
+                ],
+            ),
+            "pick_action": self._build_diagram_fsm(
+                "pick_action",
+                "PICK_START",
+                [
+                    ("PICK_START", "PICK_LOWER"),
+                    ("PICK_LOWER", "PICK_NEED_DOCK"),
+                    ("PICK_NEED_DOCK", "PICK_DOCK_START"),
+                    ("PICK_NEED_DOCK", "PICK_LIFT"),
+                    ("PICK_DOCK_START", "PICK_DOCK_WAIT_TAG"),
+                    ("PICK_DOCK_WAIT_TAG", "PICK_DOCK_ALIGN"),
+                    ("PICK_DOCK_ALIGN", "PICK_DOCK_APPROACH"),
+                    ("PICK_DOCK_APPROACH", "PICK_DOCK_UNDER"),
+                    ("PICK_DOCK_UNDER", "PICK_DOCK_DONE"),
+                    ("PICK_DOCK_DONE", "PICK_LIFT"),
+                    ("PICK_LIFT", "PICK_LOAD"),
+                    ("PICK_LOAD", "PICK_DONE"),
+                    ("PICK_LOWER", "PICK_FAILED"),
+                    ("PICK_DOCK_WAIT_TAG", "PICK_DOCK_FAILED"),
+                    ("PICK_DOCK_ALIGN", "PICK_DOCK_FAILED"),
+                    ("PICK_DOCK_APPROACH", "PICK_DOCK_FAILED"),
+                    ("PICK_DOCK_FAILED", "PICK_FAILED"),
+                    ("PICK_LIFT", "PICK_FAILED"),
+                ],
+            ),
+            "drop_action": self._build_diagram_fsm(
+                "drop_action",
+                "DROP_START",
+                [
+                    ("DROP_START", "DROP_LOWER"),
+                    ("DROP_LOWER", "DROP_LOAD"),
+                    ("DROP_LOAD", "DROP_DONE"),
+                    ("DROP_LOWER", "DROP_FAILED"),
+                ],
+            ),
+            "pallet_docking_pick_only": self._build_diagram_fsm(
+                "pallet_docking_pick_only",
+                "PICK_DOCK_START",
+                [
+                    ("PICK_DOCK_START", "PICK_DOCK_WAIT_TAG"),
+                    ("PICK_DOCK_WAIT_TAG", "PICK_DOCK_ALIGN"),
+                    ("PICK_DOCK_ALIGN", "PICK_DOCK_APPROACH"),
+                    ("PICK_DOCK_APPROACH", "PICK_DOCK_UNDER"),
+                    ("PICK_DOCK_UNDER", "PICK_DOCK_DONE"),
+                    ("PICK_DOCK_WAIT_TAG", "PICK_DOCK_FAILED"),
+                    ("PICK_DOCK_ALIGN", "PICK_DOCK_FAILED"),
+                    ("PICK_DOCK_APPROACH", "PICK_DOCK_FAILED"),
+                ],
+            ),
+        }
+
+    def _build_diagram_fsm(
+        self, fsm_name: str, start_state: str, edges: List[tuple]
+    ) -> StateMachine:
+        states = set()
+        outgoing: Dict[str, List[str]] = {}
+        for source, target in edges:
+            states.add(source)
+            states.add(target)
+            outgoing.setdefault(source, []).append(target)
+
+        sm = StateMachine(outcomes=["__diagram_finished"], handle_sigint=False)
+        sm.set_name(fsm_name)
+        for state_name in sorted(states):
+            targets = outgoing.get(state_name, [state_name])
+            transitions = {
+                self._diagram_outcome(state_name, index, target): target
+                for index, target in enumerate(targets)
+            }
+            sm.add_state(
+                state_name,
+                DiagramState(list(transitions.keys())),
+                transitions,
+            )
+        sm.set_start_state(start_state)
+        return sm
+
+    def _diagram_outcome(self, source: str, index: int, target: str) -> str:
+        del source
+        if index == 0:
+            return "to_%s" % target
+        return "to_%s_%d" % (target, index + 1)
+
     def _start_robot_fsm(self) -> None:
         with self._mission_lock:
             self._robot_fsm = self._build_robot_fsm()
             self._robot_fsm.validate()
+            self._architecture_fsms = self._build_architecture_fsms()
+            for fsm in self._architecture_fsms.values():
+                fsm.validate()
             self._robot_blackboard = Blackboard()
             self._register_yasmin_viewers_locked()
             thread = threading.Thread(
@@ -911,6 +1118,8 @@ class RobotControlCore(Node):
                 self._register_yasmin_viewer_locked(
                     "%s_mode" % mode.lower(), fsm
                 )
+        for fsm_name, fsm in self._architecture_fsms.items():
+            self._register_yasmin_viewer_locked(fsm_name, fsm)
 
     def _register_yasmin_viewer_locked(
         self, fsm_name: str, fsm: StateMachine
@@ -1119,6 +1328,7 @@ class RobotControlCore(Node):
             self._poll_drop(action)
 
     def _start_docking(self, action: MicroAction) -> None:
+        action.runner["phase"] = "dock_start"
         payload = {"command": "start"}
         tag_frame = self._station_reference(action.parameters)
         if tag_frame:
@@ -1140,18 +1350,20 @@ class RobotControlCore(Node):
             action.status = ACTION_FAILED
             action.result = "docking service is not available"
             return
-        action.runner.update({"future": future, "phase": "accept", "status_future": None})
+        action.runner.update(
+            {"future": future, "phase": "dock_accept", "status_future": None}
+        )
         action.status = ACTION_RUNNING
 
     def _poll_docking(self, action: MicroAction) -> None:
-        if action.runner.get("phase") == "accept":
+        if action.runner.get("phase") == "dock_accept":
             future = action.runner.get("future")
             if not future.done():
                 self._fail_on_timeout(action, "docking accept timeout")
                 return
             if not self._response_success(future, action, "docking rejected"):
                 return
-            action.runner["phase"] = "poll_status"
+            action.runner["phase"] = "dock_poll_status"
             return
 
         status_future = action.runner.get("status_future")
@@ -1330,12 +1542,14 @@ class RobotControlCore(Node):
             self._loads = []
 
     def _start_fork_position(self, action: MicroAction) -> None:
+        action.runner["phase"] = "fork_command"
         target = float(action.parameters.get("position", self._fork_lower_position))
         action.runner["target"] = target
         self._publish_fork_target(target)
         action.status = ACTION_RUNNING
 
     def _poll_fork_position(self, action: MicroAction) -> None:
+        action.runner["phase"] = "fork_wait_position"
         target = float(action.runner["target"])
         if self._fork_position is not None:
             if math.fabs(self._fork_position - target) <= self._fork_tolerance:
@@ -1521,6 +1735,14 @@ class RobotControlCore(Node):
                 "currentActionId": (
                     self._current_action.action_id if self._current_action else ""
                 ),
+                "currentActionType": (
+                    self._current_action.action_type if self._current_action else ""
+                ),
+                "currentActionPhase": (
+                    self._action_phase(self._current_action)
+                    if self._current_action
+                    else ""
+                ),
                 "queuedActionIds": [action.action_id for action in self._queue],
                 "horizonActionIds": [action.action_id for action in self._horizon],
                 "nodeStates": list(self._node_states),
@@ -1538,8 +1760,20 @@ class RobotControlCore(Node):
             "actionType": action.action_type,
             "blockingType": action.blocking_type,
             "actionStatus": action.status,
+            "actionPhase": self._action_phase(action),
             "actionResult": action.result,
         }
+
+    def _action_phase(self, action: Optional[MicroAction]) -> str:
+        if action is None:
+            return ""
+        phase = str(action.runner.get("phase", ""))
+        child = action.runner.get("child")
+        if isinstance(child, MicroAction):
+            child_phase = self._action_phase(child)
+            if child_phase:
+                return "%s.%s" % (phase, child_phase)
+        return phase
 
     def _elapsed(self, earlier: Time) -> float:
         return self._seconds_since(earlier, self.get_clock().now())

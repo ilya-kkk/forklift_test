@@ -300,8 +300,15 @@ flowchart TB
 
 `robot_control_core` по умолчанию публикует активную FSM в `/fsm_viewer`.
 Публикуются отдельные graph names:
-`robot_control_core`, `automatic_mode`, `semiautomatic_mode`, `intervened_mode`.
-В viewer можно выбрать как верхний автомат ноды, так и mode-specific FSM.
+`robot_control_core`, `automatic_mode`, `semiautomatic_mode`, `intervened_mode`,
+а также архитектурные графы `operating_mode_architecture`,
+`automatic_mode_architecture`, `semiautomatic_mode_architecture`,
+`intervened_mode_architecture`, `manual_mode_architecture`,
+`service_mode_architecture`, `teach_in_mode_architecture`, `order_fsm`,
+`pick_action`, `drop_action`, `start_charging_action` и
+`pallet_docking_pick_only`.
+В viewer можно выбрать как активный автомат ноды, так и mode/order/action FSM из
+большой схемы выше.
 
 Запуск viewer отдельно:
 
