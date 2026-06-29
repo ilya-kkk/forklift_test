@@ -1,0 +1,55 @@
+mqtt_client:
+  ros__parameters:
+    broker:
+      host: 127.0.0.1
+      port: 1884
+      tls:
+        enabled: false
+    client:
+      id: "forklift_test_vda5050_v3"
+      clean_session: true
+      keep_alive_interval: 15.0
+      max_inflight: 65535
+      buffer:
+        size: 0
+        directory: "buffer"
+      last_will:
+        topic: vda5050/v3/ACCORD/forklift_sim/connection
+        message: '{"headerId":0,"timestamp":"","version":"3.0.0","manufacturer":"ACCORD","serialNumber":"forklift_sim","connectionState":"CONNECTION_BROKEN"}'
+        qos: 1
+        retained: true
+    bridge:
+      ros2mqtt:
+        ros_topics:
+          - /vda5050/state
+          - /vda5050/connection
+          - /vda5050/factsheet
+        /vda5050/state:
+          mqtt_topic: vda5050/v3/ACCORD/forklift_sim/state
+          primitive: true
+        /vda5050/connection:
+          mqtt_topic: vda5050/v3/ACCORD/forklift_sim/connection
+          primitive: true
+          advanced:
+            mqtt:
+              qos: 1
+              retained: true
+        /vda5050/factsheet:
+          mqtt_topic: vda5050/v3/ACCORD/forklift_sim/factsheet
+          primitive: true
+          advanced:
+            mqtt:
+              retained: true
+
+      mqtt2ros:
+        mqtt_topics:
+          - vda5050/v3/ACCORD/forklift_sim/order
+          - vda5050/v3/ACCORD/forklift_sim/instantActions
+        vda5050/v3/ACCORD/forklift_sim/order:
+          ros_topic: /vda5050/order
+          primitive: true
+          ros_type: "std_msgs/msg/String"
+        vda5050/v3/ACCORD/forklift_sim/instantActions:
+          ros_topic: /vda5050/instantActions
+          primitive: true
+          ros_type: "std_msgs/msg/String"

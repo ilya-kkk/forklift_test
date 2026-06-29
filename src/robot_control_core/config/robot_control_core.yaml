@@ -10,6 +10,8 @@ robot_control_core:
 
     motion_control_service: /cmd_vel_arcestrator/control
     docking_control_service: /palette_docking/control
+    navigation_status_topic: /forklift_nav/state
+    docking_status_topic: /palette_docking_no_camera/status
 
     fork_cmd_topic: /forklift/fork_cmd
     joint_states_topic: /joint_states

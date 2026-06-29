@@ -1,0 +1,54 @@
+vda5050_3_bridge:
+  ros__parameters:
+    interface_name: vda5050
+    major_version: v3
+    protocol_version: 3.0.0
+    manufacturer: ACCORD
+    serial_number: forklift_sim
+    series_name: forklift_demo
+
+    core_control_service: /robot_control_core/control
+    core_status_topic: /robot_control_core/status
+
+    order_topic: /vda5050/order
+    instant_actions_topic: /vda5050/instantActions
+    state_topic: /vda5050/state
+    connection_topic: /vda5050/connection
+    factsheet_topic: /vda5050/factsheet
+    events_topic: /vda5050_3_driver/events
+
+    order_service: /vda5050_3_driver/order
+    instant_actions_service: /vda5050_3_driver/instant_actions
+    state_service: /vda5050_3_driver/state
+    factsheet_service: /vda5050_3_driver/factsheet
+
+    state_publish_period_sec: 1.0
+    core_service_timeout_sec: 2.0
+
+    # Safe default: robot_control_core currently executes micro actions, not
+    # VDA edge traversal. Keep false unless a navigation adapter is added.
+    allow_unconnected_route_orders: false
+    accept_edge_actions: false
+    allowed_blocking_types: [NONE, SINGLE, SOFT, HARD]
+
+    maximum_message_length: 0
+    maximum_nodes_per_order: 1
+    maximum_edges_per_order: 0
+    maximum_actions_per_node: 16
+    maximum_actions_per_edge: 0
+    maximum_instant_actions: 16
+    maximum_state_action_states: 64
+    maximum_state_errors: 16
+    minimum_state_interval_sec: 0.2
+
+    maximum_load_mass_kg: 1000.0
+    minimum_speed_mps: 0.0
+    maximum_speed_mps: 1.0
+    minimum_angular_speed_radps: 0.0
+    maximum_angular_speed_radps: 1.0
+    maximum_acceleration_mps2: 0.5
+    maximum_deceleration_mps2: 0.5
+    minimum_height_m: 0.0
+    maximum_height_m: 2.0
+    width_m: 0.8
+    length_m: 1.6

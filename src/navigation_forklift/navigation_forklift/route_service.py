@@ -15,6 +15,7 @@ from rclpy.duration import Duration as RclpyDuration
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
+from std_msgs.msg import String
 from forklift_interfaces.srv import StringWithJson
 from tf2_ros import Buffer, TransformException, TransformListener
 
@@ -37,6 +38,8 @@ class RouteServiceNode(Node):
             "revers_move_to_service_name", "/forklift_nav/revers_move_to"
         )
         self.declare_parameter("status_service_name", "/forklift_nav/status")
+        self.declare_parameter("status_topic", "/forklift_nav/state")
+        self.declare_parameter("status_publish_period_sec", 0.5)
         self.declare_parameter("follow_path_action_name", "follow_path")
         self.declare_parameter("spin_action_name", "spin")
         self.declare_parameter("drive_on_heading_action_name", "drive_on_heading")
@@ -67,6 +70,10 @@ class RouteServiceNode(Node):
             self.get_parameter("revers_move_to_service_name").value
         )
         status_service_name = str(self.get_parameter("status_service_name").value)
+        status_topic = str(self.get_parameter("status_topic").value)
+        status_publish_period_sec = max(
+            0.1, float(self.get_parameter("status_publish_period_sec").value)
+        )
         follow_path_action_name = str(
             self.get_parameter("follow_path_action_name").value
         )
@@ -127,6 +134,7 @@ class RouteServiceNode(Node):
         )
         self._path_publisher = self.create_publisher(Path, path_topic, path_qos)
         self._cmd_vel_publisher = self.create_publisher(Twist, cmd_vel_topic, 10)
+        self._status_publisher = self.create_publisher(String, status_topic, 10)
         self._map_client = self.create_client(StringWithJson, self._map_service_name)
         self._follow_path_client = ActionClient(self, FollowPath, follow_path_action_name)
         self._spin_client = ActionClient(self, Spin, spin_action_name)
@@ -150,20 +158,24 @@ class RouteServiceNode(Node):
         self.create_service(
             StringWithJson, status_service_name, self._handle_status_request
         )
+        self.create_timer(status_publish_period_sec, self._publish_status)
 
         self._lock = threading.Lock()
         self._active_request: Optional[Dict[str, Any]] = None
         self._active_request_started_at: Optional[float] = None
         self._last_result: Dict[str, Any] = {"state": "idle"}
+        self._phase = "IDLE"
+        self._phase_details: Dict[str, Any] = {}
 
         self.get_logger().info(
-            "Route service ready: route=%s move_to=%s revers_move_to=%s status=%s map=%s follow_path=%s spin=%s drive_on_heading=%s "
+            "Route service ready: route=%s move_to=%s revers_move_to=%s status=%s status_topic=%s map=%s follow_path=%s spin=%s drive_on_heading=%s "
             "path_topic=%s cmd_vel=%s align_min_seg=%.2f short_route_threshold=%.2f short_speed=%.2f goal_yaw_timeout=%.1f json_graph=true"
             % (
                 route_service_name,
                 move_to_service_name,
                 revers_move_to_service_name,
                 status_service_name,
+                status_topic,
                 self._map_service_name,
                 follow_path_action_name,
                 spin_action_name,
@@ -218,28 +230,52 @@ class RouteServiceNode(Node):
 
     def _handle_status_request(self, request, response):
         del request
+        response.success = True
+        response.message = json.dumps(self._status(), ensure_ascii=False)
+        return response
+
+    def _status(self) -> Dict[str, Any]:
         with self._lock:
             active_request = (
                 dict(self._active_request) if self._active_request is not None else None
             )
             active_started_at = self._active_request_started_at
             last_result = dict(self._last_result)
+            phase = self._phase
+            phase_details = dict(self._phase_details)
+        return {
+            "active": active_request is not None,
+            "active_request": active_request,
+            "active_elapsed_sec": (
+                max(0.0, time.monotonic() - active_started_at)
+                if active_started_at is not None
+                else None
+            ),
+            "phase": phase,
+            "phase_details": phase_details,
+            "last_result": last_result,
+        }
 
-        response.success = True
-        response.message = json.dumps(
-            {
-                "active": active_request is not None,
-                "active_request": active_request,
-                "active_elapsed_sec": (
-                    max(0.0, time.monotonic() - active_started_at)
-                    if active_started_at is not None
-                    else None
-                ),
-                "last_result": last_result,
-            },
-            ensure_ascii=False,
-        )
-        return response
+    def _publish_status(self) -> None:
+        msg = String()
+        msg.data = json.dumps(self._status(), ensure_ascii=False)
+        self._status_publisher.publish(msg)
+
+    def _set_phase(self, phase: str, **details: Any) -> None:
+        phase = str(phase)
+        with self._lock:
+            old_phase = self._phase
+            self._phase = phase
+            self._phase_details = dict(details)
+            if self._active_request is not None:
+                self._last_result = {
+                    **self._last_result,
+                    "phase": phase,
+                    "phase_details": dict(details),
+                }
+        if old_phase != phase:
+            self.get_logger().info("route state: %s -> %s" % (old_phase, phase))
+        self._publish_status()
 
     def _accept_request(self, pending_request: Dict[str, Any], response):
         with self._lock:
@@ -257,6 +293,12 @@ class RouteServiceNode(Node):
             self._active_request_started_at = time.monotonic()
             self._last_result = {
                 "state": "running",
+                "mode": pending_request["mode"],
+                "goal": pending_request["goal_value"],
+                "phase": "ACCEPTED",
+            }
+            self._phase = "ACCEPTED"
+            self._phase_details = {
                 "mode": pending_request["mode"],
                 "goal": pending_request["goal_value"],
             }
@@ -279,6 +321,7 @@ class RouteServiceNode(Node):
             },
             ensure_ascii=False,
         )
+        self._publish_status()
         return response
 
     def _decode_json_payload(self, message: str) -> Dict[str, Any]:
@@ -337,6 +380,11 @@ class RouteServiceNode(Node):
             "goal": pending_request["goal_value"],
         }
         try:
+            self._set_phase(
+                "RESOLVING_ROUTE",
+                mode=pending_request["mode"],
+                goal=pending_request["goal_value"],
+            )
             resolved_request = self._resolve_route_request(pending_request)
             if not self._run_route_request(resolved_request):
                 result = {
@@ -358,6 +406,13 @@ class RouteServiceNode(Node):
                 self._active_request = None
                 self._active_request_started_at = None
                 self._last_result = result
+                self._phase = "FINISHED" if result.get("state") == "finished" else "FAILED"
+                self._phase_details = {
+                    "mode": result.get("mode", ""),
+                    "goal": result.get("goal", ""),
+                    "error": result.get("error", ""),
+                }
+            self._publish_status()
 
     def _resolve_route_request(self, pending_request: Dict[str, Any]) -> Dict[str, Any]:
         map_data = self._load_map_data()
@@ -443,12 +498,14 @@ class RouteServiceNode(Node):
         else:
             self.get_logger().info("Route execution skipped: already at drive goal")
 
-        if goal_yaw is not None and not self._rotate_to_yaw(
-            goal_yaw,
-            "goal yaw",
-            timeout_sec=self._goal_yaw_timeout_sec,
-        ):
-            return False
+        if goal_yaw is not None:
+            self._set_phase("GOAL_YAW_ALIGNMENT", target_yaw=float(goal_yaw))
+            if not self._rotate_to_yaw(
+                goal_yaw,
+                "goal yaw",
+                timeout_sec=self._goal_yaw_timeout_sec,
+            ):
+                return False
 
         self.get_logger().info(
             "Route execution finished successfully at %s (%d)"
@@ -488,6 +545,11 @@ class RouteServiceNode(Node):
                 "ReversMoveTo following forward prefix, poses=%d"
                 % len(prefix_path.poses)
             )
+            self._set_phase(
+                "FORWARD_PREFIX",
+                motion_mode="forward",
+                poses=len(prefix_path.poses),
+            )
             if not self._follow_path(prefix_path, motion_mode="forward"):
                 return False
 
@@ -506,6 +568,11 @@ class RouteServiceNode(Node):
                 "ReversMoveTo following final edge backwards, poses=%d"
                 % len(reverse_path.poses)
             )
+            self._set_phase(
+                "REVERSE_FINAL_EDGE",
+                motion_mode="reverse",
+                poses=len(reverse_path.poses),
+            )
             if not self._follow_path(
                 reverse_path,
                 motion_mode="reverse",
@@ -514,12 +581,14 @@ class RouteServiceNode(Node):
         else:
             self.get_logger().info("ReversMoveTo skipped: already at drive goal")
 
-        if goal_yaw is not None and not self._rotate_to_yaw(
-            goal_yaw,
-            "goal yaw",
-            timeout_sec=self._goal_yaw_timeout_sec,
-        ):
-            return False
+        if goal_yaw is not None:
+            self._set_phase("GOAL_YAW_ALIGNMENT", target_yaw=float(goal_yaw))
+            if not self._rotate_to_yaw(
+                goal_yaw,
+                "goal yaw",
+                timeout_sec=self._goal_yaw_timeout_sec,
+            ):
+                return False
 
         self.get_logger().info(
             "ReversMoveTo execution finished successfully at %s (%d)"
@@ -546,6 +615,12 @@ class RouteServiceNode(Node):
         if not self._ensure_robot_facing_path(path, motion_mode=motion_mode):
             return False
 
+        self._set_phase(
+            "FOLLOW_PATH",
+            motion_mode=motion_mode,
+            poses=len(path.poses),
+            path_length_m=path_length,
+        )
         self._path_publisher.publish(path)
         follow_goal = FollowPath.Goal()
         follow_goal.path = path
@@ -625,6 +700,12 @@ class RouteServiceNode(Node):
                 self._short_route_speed_mps * drive_sign,
             )
         )
+        self._set_phase(
+            "DRIVE_ON_HEADING",
+            motion_mode=motion_mode,
+            distance_m=distance_to_goal,
+            speed_mps=self._short_route_speed_mps * drive_sign,
+        )
         drive_result = self._send_action_goal_and_wait(
             self._drive_on_heading_client,
             drive_goal,
@@ -657,6 +738,12 @@ class RouteServiceNode(Node):
         self.get_logger().info(
             "Robot is not aligned with %s (%s), yaw turning by %.3f rad"
             % (label, motion_mode, delta_yaw)
+        )
+        self._set_phase(
+            "TARGET_YAW_ALIGNMENT",
+            label=label,
+            motion_mode=motion_mode,
+            delta_yaw=delta_yaw,
         )
         assist_sign = 1.0
         return self._spin_by_delta_yaw(
@@ -704,6 +791,12 @@ class RouteServiceNode(Node):
             "Robot is not aligned with %s (%s), spinning by %.3f rad before DriveOnHeading"
             % (label, motion_mode, delta_yaw)
         )
+        self._set_phase(
+            "SHORT_ROUTE_ALIGNMENT",
+            label=label,
+            motion_mode=motion_mode,
+            delta_yaw=delta_yaw,
+        )
         assist_sign = 1.0
         return self._spin_by_delta_yaw(
             delta_yaw,
@@ -736,6 +829,11 @@ class RouteServiceNode(Node):
         self.get_logger().info(
             "Robot is not aligned with path (%s), yaw turning by %.3f rad before FollowPath"
             % (motion_mode, delta_yaw)
+        )
+        self._set_phase(
+            "PATH_ALIGNMENT",
+            motion_mode=motion_mode,
+            delta_yaw=delta_yaw,
         )
         assist_sign = 1.0
         return self._spin_by_delta_yaw(

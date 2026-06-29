@@ -1,0 +1,1288 @@
+#!/usr/bin/env python3
+import json
+import threading
+import time
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+import rclpy
+from forklift_interfaces.srv import StringWithJson
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
+from std_msgs.msg import String
+
+
+ACTION_WAITING = "WAITING"
+ACTION_FINISHED = "FINISHED"
+ACTION_FAILED = "FAILED"
+END_ACTION_STATES = {ACTION_FINISHED, ACTION_FAILED}
+
+SUPPORTED_ORDER_ACTION_TYPES = {"finePositioning", "pick", "drop"}
+SUPPORTED_INSTANT_ACTION_TYPES = {
+    "startPause",
+    "stopPause",
+    "cancelOrder",
+    "stateRequest",
+    "factsheetRequest",
+    "clearInstantActions",
+}
+VALID_BLOCKING_TYPES = {"NONE", "SINGLE", "SOFT", "HARD"}
+
+ORDER_ACTIVE_STATES = {"ORDER_ACTIVE"}
+ORDER_ACTIVE_SUBSTATES = {
+    "EXECUTING_BASE",
+    "WAITING_FOR_BASE_EXTENSION",
+    "PAUSED",
+    "CANCELLING",
+    "FAILED_RECOVERABLE",
+}
+
+
+class VdaReject(ValueError):
+    def __init__(
+        self,
+        error_type: str,
+        details: str,
+        *,
+        level: str = "WARNING",
+        references: Optional[List[Dict[str, str]]] = None,
+    ) -> None:
+        super().__init__(details)
+        self.error_type = error_type
+        self.details = details
+        self.level = level
+        self.references = references or []
+
+
+class Vda5050Bridge(Node):
+    def __init__(self) -> None:
+        super().__init__("vda5050_3_bridge")
+
+        self.declare_parameter("interface_name", "vda5050")
+        self.declare_parameter("major_version", "v3")
+        self.declare_parameter("protocol_version", "3.0.0")
+        self.declare_parameter("manufacturer", "ACCORD")
+        self.declare_parameter("serial_number", "forklift_sim")
+        self.declare_parameter("series_name", "forklift_demo")
+        self.declare_parameter("state_publish_period_sec", 1.0)
+        self.declare_parameter("core_service_timeout_sec", 2.0)
+        self.declare_parameter("allow_unconnected_route_orders", False)
+        self.declare_parameter("accept_edge_actions", False)
+        self.declare_parameter("allowed_blocking_types", ["NONE", "SINGLE", "SOFT", "HARD"])
+
+        self.declare_parameter("core_control_service", "/robot_control_core/control")
+        self.declare_parameter("core_status_topic", "/robot_control_core/status")
+        self.declare_parameter("order_topic", "/vda5050/order")
+        self.declare_parameter("instant_actions_topic", "/vda5050/instantActions")
+        self.declare_parameter("state_topic", "/vda5050/state")
+        self.declare_parameter("connection_topic", "/vda5050/connection")
+        self.declare_parameter("factsheet_topic", "/vda5050/factsheet")
+        self.declare_parameter("events_topic", "/vda5050_3_driver/events")
+        self.declare_parameter("order_service", "/vda5050_3_driver/order")
+        self.declare_parameter("instant_actions_service", "/vda5050_3_driver/instant_actions")
+        self.declare_parameter("state_service", "/vda5050_3_driver/state")
+        self.declare_parameter("factsheet_service", "/vda5050_3_driver/factsheet")
+
+        self.declare_parameter("maximum_message_length", 0)
+        self.declare_parameter("maximum_nodes_per_order", 1)
+        self.declare_parameter("maximum_edges_per_order", 0)
+        self.declare_parameter("maximum_actions_per_node", 16)
+        self.declare_parameter("maximum_actions_per_edge", 0)
+        self.declare_parameter("maximum_instant_actions", 16)
+        self.declare_parameter("maximum_state_action_states", 64)
+        self.declare_parameter("maximum_state_errors", 16)
+        self.declare_parameter("minimum_state_interval_sec", 0.2)
+
+        self.declare_parameter("maximum_load_mass_kg", 1000.0)
+        self.declare_parameter("minimum_speed_mps", 0.0)
+        self.declare_parameter("maximum_speed_mps", 1.0)
+        self.declare_parameter("minimum_angular_speed_radps", 0.0)
+        self.declare_parameter("maximum_angular_speed_radps", 1.0)
+        self.declare_parameter("maximum_acceleration_mps2", 0.5)
+        self.declare_parameter("maximum_deceleration_mps2", 0.5)
+        self.declare_parameter("minimum_height_m", 0.0)
+        self.declare_parameter("maximum_height_m", 2.0)
+        self.declare_parameter("width_m", 0.8)
+        self.declare_parameter("length_m", 1.6)
+
+        self._interface_name = str(self.get_parameter("interface_name").value)
+        self._major_version = str(self.get_parameter("major_version").value)
+        self._protocol_version = str(self.get_parameter("protocol_version").value)
+        self._manufacturer = str(self.get_parameter("manufacturer").value)
+        self._serial_number = str(self.get_parameter("serial_number").value)
+        self._series_name = str(self.get_parameter("series_name").value)
+        self._state_period = max(
+            0.05, float(self.get_parameter("state_publish_period_sec").value)
+        )
+        self._service_timeout = max(
+            0.1, float(self.get_parameter("core_service_timeout_sec").value)
+        )
+        self._allow_unconnected_route_orders = bool(
+            self.get_parameter("allow_unconnected_route_orders").value
+        )
+        self._accept_edge_actions = bool(self.get_parameter("accept_edge_actions").value)
+        self._allowed_blocking_types = self._string_set_param(
+            "allowed_blocking_types", VALID_BLOCKING_TYPES
+        )
+
+        self._lock = threading.RLock()
+        self._header_ids: Dict[str, int] = {}
+        self._core_status: Dict[str, Any] = {}
+        self._driver_errors: List[Dict[str, Any]] = []
+        self._instant_action_states: List[Dict[str, Any]] = []
+        self._accepted_order_id = ""
+        self._accepted_order_update_id = 0
+        self._last_order_fingerprint = ""
+        self._last_base_node: Dict[str, Any] = {}
+        self._offline_published = False
+        self._callback_group = ReentrantCallbackGroup()
+
+        self._core_client = self.create_client(
+            StringWithJson,
+            str(self.get_parameter("core_control_service").value),
+            callback_group=self._callback_group,
+        )
+
+        self._state_pub = self.create_publisher(
+            String, str(self.get_parameter("state_topic").value), 10
+        )
+        self._connection_pub = self.create_publisher(
+            String, str(self.get_parameter("connection_topic").value), 10
+        )
+        self._factsheet_pub = self.create_publisher(
+            String, str(self.get_parameter("factsheet_topic").value), 10
+        )
+        self._events_pub = self.create_publisher(
+            String, str(self.get_parameter("events_topic").value), 10
+        )
+
+        self.create_subscription(
+            String,
+            str(self.get_parameter("order_topic").value),
+            self._order_topic_callback,
+            10,
+            callback_group=self._callback_group,
+        )
+        self.create_subscription(
+            String,
+            str(self.get_parameter("instant_actions_topic").value),
+            self._instant_actions_topic_callback,
+            10,
+            callback_group=self._callback_group,
+        )
+        self.create_subscription(
+            String,
+            str(self.get_parameter("core_status_topic").value),
+            self._core_status_callback,
+            10,
+            callback_group=self._callback_group,
+        )
+
+        self.create_service(
+            StringWithJson,
+            str(self.get_parameter("order_service").value),
+            self._order_service_callback,
+            callback_group=self._callback_group,
+        )
+        self.create_service(
+            StringWithJson,
+            str(self.get_parameter("instant_actions_service").value),
+            self._instant_actions_service_callback,
+            callback_group=self._callback_group,
+        )
+        self.create_service(
+            StringWithJson,
+            str(self.get_parameter("state_service").value),
+            self._state_service_callback,
+            callback_group=self._callback_group,
+        )
+        self.create_service(
+            StringWithJson,
+            str(self.get_parameter("factsheet_service").value),
+            self._factsheet_service_callback,
+            callback_group=self._callback_group,
+        )
+
+        self.create_timer(
+            self._state_period,
+            self._timer_callback,
+            callback_group=self._callback_group,
+        )
+        self._publish_connection("ONLINE")
+        self._publish_factsheet()
+
+        self.get_logger().info(
+            "VDA5050 v3 bridge ready: order_topic=%s instant_topic=%s core=%s"
+            % (
+                str(self.get_parameter("order_topic").value),
+                str(self.get_parameter("instant_actions_topic").value),
+                str(self.get_parameter("core_control_service").value),
+            )
+        )
+
+    def destroy_node(self) -> bool:
+        self._publish_offline_once()
+        return super().destroy_node()
+
+    def _string_set_param(self, name: str, fallback: Sequence[str]) -> set:
+        value = self.get_parameter(name).value
+        if isinstance(value, (list, tuple)):
+            return {str(item).upper() for item in value}
+        if isinstance(value, str):
+            return {item.strip().upper() for item in value.split(",") if item.strip()}
+        return {str(item).upper() for item in fallback}
+
+    def _timer_callback(self) -> None:
+        self._publish_state()
+
+    def _order_topic_callback(self, msg: String) -> None:
+        success, result = self._handle_order_text(msg.data)
+        self._publish_event("order", success, result)
+
+    def _instant_actions_topic_callback(self, msg: String) -> None:
+        success, result = self._handle_instant_actions_text(msg.data)
+        self._publish_event("instantActions", success, result)
+
+    def _core_status_callback(self, msg: String) -> None:
+        try:
+            status = json.loads(msg.data or "{}")
+        except json.JSONDecodeError as exc:
+            self.get_logger().warn("invalid robot_control_core status JSON: %s" % exc)
+            return
+        if not isinstance(status, dict):
+            self.get_logger().warn("robot_control_core status is not a JSON object")
+            return
+        with self._lock:
+            self._core_status = status
+            self._accepted_order_id = str(status.get("orderId") or self._accepted_order_id)
+            self._accepted_order_update_id = int(
+                status.get("orderUpdateId", self._accepted_order_update_id) or 0
+            )
+
+    def _order_service_callback(self, request, response):
+        success, result = self._handle_order_text(request.message)
+        response.success = success
+        response.message = json.dumps(result, ensure_ascii=False)
+        return response
+
+    def _instant_actions_service_callback(self, request, response):
+        success, result = self._handle_instant_actions_text(request.message)
+        response.success = success
+        response.message = json.dumps(result, ensure_ascii=False)
+        return response
+
+    def _state_service_callback(self, request, response):
+        del request
+        self._refresh_core_status()
+        state = self._build_state()
+        self._publish_json(self._state_pub, state)
+        response.success = True
+        response.message = json.dumps(state, ensure_ascii=False)
+        return response
+
+    def _factsheet_service_callback(self, request, response):
+        del request
+        factsheet = self._build_factsheet()
+        self._publish_json(self._factsheet_pub, factsheet)
+        response.success = True
+        response.message = json.dumps(factsheet, ensure_ascii=False)
+        return response
+
+    def _handle_order_text(self, data: str) -> Tuple[bool, Dict[str, Any]]:
+        try:
+            payload = json.loads(data or "{}")
+        except json.JSONDecodeError as exc:
+            result = self._reject_result("VALIDATION_FAILURE", "invalid JSON: %s" % exc)
+            self._publish_state()
+            return False, result
+        if isinstance(payload, dict) and isinstance(payload.get("order"), dict):
+            payload = payload["order"]
+        if not isinstance(payload, dict):
+            result = self._reject_result("VALIDATION_FAILURE", "order must be a JSON object")
+            self._publish_state()
+            return False, result
+        return self._process_order(payload)
+
+    def _process_order(self, order: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+        try:
+            core_status = self._refresh_core_status()
+            conversion = self._order_to_core_payload(order, core_status)
+        except VdaReject as exc:
+            result = self._reject_result(
+                exc.error_type, exc.details, level=exc.level, references=exc.references
+            )
+            self._publish_state()
+            return False, result
+
+        if conversion.get("duplicate"):
+            self._publish_state()
+            return True, {
+                "accepted": True,
+                "duplicate": True,
+                "orderId": conversion["order_id"],
+                "orderUpdateId": conversion["order_update_id"],
+                "details": "duplicate order update ignored",
+            }
+
+        core_payload = conversion["core_payload"]
+        success, core_response = self._call_core(core_payload)
+        if not success:
+            details = self._core_error_details(core_response)
+            result = self._reject_result("MOBILE_ROBOT_NOT_AVAILABLE", details)
+            self._publish_state()
+            return False, result
+
+        with self._lock:
+            self._driver_errors.clear()
+            self._accepted_order_id = conversion["order_id"]
+            self._accepted_order_update_id = conversion["order_update_id"]
+            self._last_order_fingerprint = conversion["fingerprint"]
+            self._last_base_node = conversion["last_base_node"]
+            if isinstance(core_response, dict):
+                self._core_status = core_response
+
+        self._publish_state()
+        return True, {
+            "accepted": True,
+            "command": core_payload["command"],
+            "orderId": conversion["order_id"],
+            "orderUpdateId": conversion["order_update_id"],
+            "baseActionCount": len(core_payload.get("base_steps", core_payload.get("steps", []))),
+            "horizonActionCount": len(core_payload.get("horizon_steps", [])),
+            "coreStatus": core_response,
+        }
+
+    def _order_to_core_payload(
+        self, order: Dict[str, Any], core_status: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        self._validate_order_shape(order)
+
+        order_id = str(order["orderId"])
+        order_update_id = int(order["orderUpdateId"])
+        nodes = order["nodes"]
+        edges = order["edges"]
+        fingerprint = self._fingerprint(order)
+
+        current_order_id = str(
+            core_status.get("orderId") or self._accepted_order_id or ""
+        )
+        current_update_id = int(
+            core_status.get("orderUpdateId", self._accepted_order_update_id) or 0
+        )
+        active = self._core_order_active(core_status)
+
+        if order_id != current_order_id:
+            if active and current_order_id:
+                raise VdaReject(
+                    "OTHER_ORDER_ACTIVE",
+                    "order %s is active; reject new order %s" % (current_order_id, order_id),
+                )
+            if order_update_id != 0:
+                raise VdaReject(
+                    "VALIDATION_FAILURE",
+                    "new order must start with orderUpdateId 0",
+                )
+            if int(nodes[0]["sequenceId"]) != 0:
+                raise VdaReject(
+                    "VALIDATION_FAILURE",
+                    "new order first node must have sequenceId 0",
+                )
+            command = "start_mission"
+        else:
+            if order_update_id < current_update_id:
+                raise VdaReject(
+                    "OUTDATED_ORDER_UPDATE",
+                    "orderUpdateId %d is older than current %d"
+                    % (order_update_id, current_update_id),
+                )
+            if order_update_id == current_update_id:
+                if fingerprint == self._last_order_fingerprint:
+                    return {
+                        "duplicate": True,
+                        "order_id": order_id,
+                        "order_update_id": order_update_id,
+                    }
+                raise VdaReject(
+                    "SAME_ORDER_UPDATE_ID",
+                    "same orderUpdateId but changed order content",
+                )
+            self._validate_stitching_node(order)
+            command = "append_base" if active else "start_mission"
+
+        if edges and not self._allow_unconnected_route_orders:
+            raise VdaReject(
+                "NO_ROUTE_TO_TARGET",
+                (
+                    "VDA edge traversal is not connected to robot_control_core yet; "
+                    "send a single-node action order or enable allow_unconnected_route_orders"
+                ),
+            )
+
+        base_steps, horizon_steps = self._extract_steps(order)
+        node_states, edge_states = self._extract_route_states(order)
+        last_base_node = self._highest_released_node(nodes)
+
+        payload = {
+            "command": command,
+            "mission_id": order_id,
+            "order_id": order_id,
+            "order_update_id": order_update_id,
+            "base_steps": base_steps,
+            "horizon_steps": horizon_steps,
+            "nodeStates": node_states,
+            "edgeStates": edge_states,
+        }
+        return {
+            "duplicate": False,
+            "order_id": order_id,
+            "order_update_id": order_update_id,
+            "fingerprint": fingerprint,
+            "last_base_node": last_base_node,
+            "core_payload": payload,
+        }
+
+    def _validate_order_shape(self, order: Dict[str, Any]) -> None:
+        order_id = order.get("orderId")
+        if not isinstance(order_id, str) or not order_id:
+            raise VdaReject("VALIDATION_FAILURE", "orderId must be a non-empty string")
+        update_id = order.get("orderUpdateId")
+        if not isinstance(update_id, int) or update_id < 0:
+            raise VdaReject("VALIDATION_FAILURE", "orderUpdateId must be uint32")
+
+        nodes = order.get("nodes")
+        edges = order.get("edges", [])
+        if not isinstance(nodes, list) or not nodes:
+            raise VdaReject("VALIDATION_FAILURE", "nodes must be a non-empty array")
+        if not isinstance(edges, list):
+            raise VdaReject("VALIDATION_FAILURE", "edges must be an array")
+        if len(edges) != len(nodes) - 1:
+            raise VdaReject(
+                "VALIDATION_FAILURE",
+                "valid VDA order requires len(edges) == len(nodes) - 1",
+            )
+
+        first_sequence_id = self._required_uint(nodes[0], "sequenceId", "nodes[0]")
+        for index, node in enumerate(nodes):
+            if not isinstance(node, dict):
+                raise VdaReject("VALIDATION_FAILURE", "nodes[%d] must be object" % index)
+            expected = first_sequence_id + 2 * index
+            actual = self._required_uint(node, "sequenceId", "nodes[%d]" % index)
+            if actual != expected:
+                raise VdaReject(
+                    "VALIDATION_FAILURE",
+                    "nodes[%d].sequenceId must be %d" % (index, expected),
+                )
+            if "released" not in node:
+                raise VdaReject(
+                    "VALIDATION_FAILURE", "nodes[%d].released is required" % index
+                )
+            if not isinstance(node["released"], bool):
+                raise VdaReject(
+                    "VALIDATION_FAILURE", "nodes[%d].released must be boolean" % index
+                )
+            self._validate_actions(node.get("actions", []), "nodes[%d].actions" % index)
+
+        if not bool(nodes[0]["released"]):
+            raise VdaReject("VALIDATION_FAILURE", "first node must be released")
+
+        for index, edge in enumerate(edges):
+            if not isinstance(edge, dict):
+                raise VdaReject("VALIDATION_FAILURE", "edges[%d] must be object" % index)
+            expected = first_sequence_id + 2 * index + 1
+            actual = self._required_uint(edge, "sequenceId", "edges[%d]" % index)
+            if actual != expected:
+                raise VdaReject(
+                    "VALIDATION_FAILURE",
+                    "edges[%d].sequenceId must be %d" % (index, expected),
+                )
+            if "released" not in edge:
+                raise VdaReject(
+                    "VALIDATION_FAILURE", "edges[%d].released is required" % index
+                )
+            if not isinstance(edge["released"], bool):
+                raise VdaReject(
+                    "VALIDATION_FAILURE", "edges[%d].released must be boolean" % index
+                )
+            if bool(edge["released"]) and (
+                not bool(nodes[index]["released"]) or not bool(nodes[index + 1]["released"])
+            ):
+                raise VdaReject(
+                    "VALIDATION_FAILURE",
+                    "released edge requires both adjacent nodes released",
+                )
+            self._validate_actions(edge.get("actions", []), "edges[%d].actions" % index)
+
+        seen_horizon = False
+        for item in self._sequence_items(nodes, edges):
+            released = bool(item["object"]["released"])
+            if not released:
+                seen_horizon = True
+            elif seen_horizon:
+                raise VdaReject(
+                    "VALIDATION_FAILURE",
+                    "released node/edge cannot appear after horizon starts",
+                )
+
+    def _validate_actions(self, actions: Any, path: str) -> None:
+        if actions is None:
+            return
+        if not isinstance(actions, list):
+            raise VdaReject("VALIDATION_FAILURE", "%s must be an array" % path)
+        for index, action in enumerate(actions):
+            if not isinstance(action, dict):
+                raise VdaReject(
+                    "VALIDATION_FAILURE", "%s[%d] must be object" % (path, index)
+                )
+            action_type = str(action.get("actionType", ""))
+            if not action_type:
+                raise VdaReject(
+                    "VALIDATION_FAILURE",
+                    "%s[%d].actionType is required" % (path, index),
+                )
+            if action_type not in SUPPORTED_ORDER_ACTION_TYPES:
+                raise VdaReject(
+                    "INVALID_ORDER_ACTION",
+                    "unsupported order actionType: %s" % action_type,
+                    references=[self._error_reference("actionType", action_type)],
+                )
+            blocking_type = str(action.get("blockingType", "HARD")).upper()
+            if blocking_type not in VALID_BLOCKING_TYPES:
+                raise VdaReject(
+                    "VALIDATION_FAILURE",
+                    "%s[%d].blockingType is invalid: %s" % (path, index, blocking_type),
+                )
+            if blocking_type not in self._allowed_blocking_types:
+                raise VdaReject(
+                    "INVALID_ORDER_ACTION",
+                    "blockingType %s is not enabled in this bridge" % blocking_type,
+                )
+            params = action.get("actionParameters", [])
+            if params and not isinstance(params, list):
+                raise VdaReject(
+                    "VALIDATION_FAILURE",
+                    "%s[%d].actionParameters must be an array" % (path, index),
+                )
+
+    def _validate_stitching_node(self, order: Dict[str, Any]) -> None:
+        with self._lock:
+            last_base_node = dict(self._last_base_node)
+        if not last_base_node:
+            return
+        first = order["nodes"][0]
+        if (
+            str(first.get("nodeId", "")) != str(last_base_node.get("nodeId", ""))
+            or int(first.get("sequenceId", -1)) != int(last_base_node.get("sequenceId", -2))
+        ):
+            raise VdaReject(
+                "VALIDATION_FAILURE",
+                "order update first node must match previous decision/stitching node",
+            )
+
+    def _extract_steps(self, order: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        base_steps: List[Dict[str, Any]] = []
+        horizon_steps: List[Dict[str, Any]] = []
+        for item in self._sequence_items(order["nodes"], order["edges"]):
+            obj = item["object"]
+            kind = item["kind"]
+            if kind == "edge" and obj.get("actions") and not self._accept_edge_actions:
+                raise VdaReject(
+                    "INVALID_ORDER_ACTION",
+                    "edge actions are not enabled because edge traversal is not connected",
+                )
+            target = base_steps if bool(obj["released"]) else horizon_steps
+            for index, action in enumerate(obj.get("actions") or []):
+                target.append(self._convert_order_action(action, item, index))
+        return base_steps, horizon_steps
+
+    def _convert_order_action(
+        self, action: Dict[str, Any], item: Dict[str, Any], index: int
+    ) -> Dict[str, Any]:
+        action_type = str(action["actionType"])
+        action_id = str(
+            action.get("actionId")
+            or "%s_%s_%d_%s"
+            % (item["kind"], item["object"]["sequenceId"], index + 1, action_type)
+        )
+        step: Dict[str, Any] = {
+            "actionType": action_type,
+            "actionId": action_id,
+            "blockingType": str(action.get("blockingType", "HARD")).upper(),
+            "actionParameters": action.get("actionParameters", []),
+            "pauseAllowed": bool(action.get("pauseAllowed", True)),
+            "cancelAllowed": bool(action.get("cancelAllowed", True)),
+            "sourceKind": item["kind"],
+            "sourceSequenceId": item["object"]["sequenceId"],
+        }
+        if item["kind"] == "node":
+            step["sourceNodeId"] = str(item["object"].get("nodeId", ""))
+        else:
+            step["sourceEdgeId"] = str(item["object"].get("edgeId", ""))
+        if "actionDescriptor" in action:
+            step["actionDescriptor"] = action["actionDescriptor"]
+        if "retriable" in action:
+            step["retriable"] = action["retriable"]
+        return step
+
+    def _extract_route_states(
+        self, order: Dict[str, Any]
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        if not self._allow_unconnected_route_orders:
+            return [], []
+        node_states = [
+            self._project_fields(node, ["nodeId", "sequenceId", "nodeDescription", "nodePosition"])
+            for node in order["nodes"][1:]
+        ]
+        edge_states = [
+            self._project_fields(edge, ["edgeId", "sequenceId", "edgeDescription", "trajectory"])
+            for edge in order["edges"]
+        ]
+        return node_states, edge_states
+
+    def _handle_instant_actions_text(self, data: str) -> Tuple[bool, Dict[str, Any]]:
+        try:
+            payload = json.loads(data or "{}")
+        except json.JSONDecodeError as exc:
+            result = self._reject_result("VALIDATION_FAILURE", "invalid JSON: %s" % exc)
+            self._publish_state()
+            return False, result
+        if isinstance(payload, dict) and isinstance(payload.get("instantAction"), dict):
+            payload = {"instantActions": [payload["instantAction"]]}
+        if isinstance(payload, dict) and isinstance(payload.get("action"), dict):
+            payload = {"instantActions": [payload["action"]]}
+        if not isinstance(payload, dict):
+            result = self._reject_result(
+                "VALIDATION_FAILURE", "instantActions message must be object"
+            )
+            self._publish_state()
+            return False, result
+        return self._process_instant_actions(payload)
+
+    def _process_instant_actions(self, payload: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+        actions = payload.get("instantActions", [])
+        if not isinstance(actions, list):
+            result = self._reject_result(
+                "VALIDATION_FAILURE", "instantActions must be an array"
+            )
+            self._publish_state()
+            return False, result
+
+        results: List[Dict[str, Any]] = []
+        all_success = True
+        for index, action in enumerate(actions):
+            if not isinstance(action, dict):
+                all_success = False
+                results.append(
+                    self._record_instant_action(
+                        "instant_%d" % (index + 1),
+                        "UNKNOWN",
+                        ACTION_FAILED,
+                        "instant action must be object",
+                    )
+                )
+                continue
+            action_type = str(action.get("actionType", ""))
+            action_id = str(action.get("actionId") or "%s_%d" % (action_type or "instant", index + 1))
+            if action_type not in SUPPORTED_INSTANT_ACTION_TYPES:
+                all_success = False
+                self._set_driver_error(
+                    "INVALID_INSTANT_ACTION",
+                    "unsupported instant actionType: %s" % action_type,
+                    references=[self._error_reference("actionId", action_id)],
+                )
+                results.append(
+                    self._record_instant_action(
+                        action_id,
+                        action_type or "UNKNOWN",
+                        ACTION_FAILED,
+                        "unsupported instant action",
+                    )
+                )
+                continue
+
+            success, details = self._execute_instant_action(action_id, action_type, action)
+            all_success = all_success and success
+            results.append(
+                self._record_instant_action(
+                    action_id,
+                    action_type,
+                    ACTION_FINISHED if success else ACTION_FAILED,
+                    details,
+                )
+            )
+
+        self._publish_state()
+        return all_success, {"accepted": all_success, "instantActionStates": results}
+
+    def _execute_instant_action(
+        self, action_id: str, action_type: str, action: Dict[str, Any]
+    ) -> Tuple[bool, str]:
+        if action_type == "stateRequest":
+            self._publish_state()
+            return True, "state published"
+        if action_type == "factsheetRequest":
+            self._publish_factsheet()
+            return True, "factsheet published"
+        if action_type == "clearInstantActions":
+            with self._lock:
+                self._instant_action_states = [
+                    state
+                    for state in self._instant_action_states
+                    if state.get("actionStatus") not in END_ACTION_STATES
+                ]
+            return True, "finished/failed instant actions cleared"
+
+        core_status = self._refresh_core_status()
+        params = self._action_parameters(action)
+        if action_type == "cancelOrder":
+            active_order = str(core_status.get("orderId") or "")
+            requested_order = str(params.get("orderId", params.get("order_id", "")) or "")
+            if not self._core_order_active(core_status):
+                self._set_driver_error(
+                    "NO_ORDER_TO_CANCEL",
+                    "cancelOrder received while no order is active",
+                    references=[self._error_reference("actionId", action_id)],
+                )
+                return False, "no active order to cancel"
+            if requested_order and requested_order != active_order:
+                self._set_driver_error(
+                    "NO_ORDER_TO_CANCEL",
+                    "cancelOrder orderId %s does not match active %s"
+                    % (requested_order, active_order),
+                    references=[self._error_reference("actionId", action_id)],
+                )
+                return False, "orderId mismatch"
+
+        command = {
+            "startPause": "startPause",
+            "stopPause": "stopPause",
+            "cancelOrder": "cancelOrder",
+        }[action_type]
+        payload = {"command": command, "action_id": action_id, **params}
+        success, response = self._call_core(payload)
+        if success:
+            return True, "robot_control_core accepted %s" % command
+        return False, self._core_error_details(response)
+
+    def _call_core(self, payload: Dict[str, Any]) -> Tuple[bool, Any]:
+        if not self._core_client.wait_for_service(timeout_sec=self._service_timeout):
+            return False, {"error": "core_unavailable", "details": "service unavailable"}
+        request = StringWithJson.Request()
+        request.message = json.dumps(payload, ensure_ascii=False)
+        future = self._core_client.call_async(request)
+        deadline = time.monotonic() + self._service_timeout
+        while rclpy.ok() and time.monotonic() < deadline:
+            if future.done():
+                try:
+                    response = future.result()
+                except Exception as exc:
+                    return False, {"error": "core_call_failed", "details": str(exc)}
+                try:
+                    message = json.loads(response.message or "{}")
+                except json.JSONDecodeError:
+                    message = response.message
+                return bool(response.success), message
+            time.sleep(0.01)
+        return False, {"error": "core_timeout", "details": "service call timed out"}
+
+    def _refresh_core_status(self) -> Dict[str, Any]:
+        success, response = self._call_core({"command": "status"})
+        if success and isinstance(response, dict):
+            with self._lock:
+                self._core_status = response
+            return response
+        with self._lock:
+            return dict(self._core_status)
+
+    def _core_order_active(self, status: Dict[str, Any]) -> bool:
+        state = str(status.get("state", ""))
+        substate = str(status.get("substate", ""))
+        if state in ORDER_ACTIVE_STATES or substate in ORDER_ACTIVE_SUBSTATES:
+            return bool(status.get("orderId") or status.get("missionId"))
+        for action in status.get("actionStates", []):
+            if isinstance(action, dict) and action.get("actionStatus") not in END_ACTION_STATES:
+                return True
+        return False
+
+    def _build_state(self) -> Dict[str, Any]:
+        with self._lock:
+            status = dict(self._core_status)
+            driver_errors = list(self._driver_errors)
+            instant_actions = list(self._instant_action_states)
+            last_base_node = dict(self._last_base_node)
+
+        return {
+            **self._header("state"),
+            "maps": [],
+            "zoneSets": [],
+            "orderId": str(status.get("orderId", self._accepted_order_id) or ""),
+            "orderUpdateId": int(
+                status.get("orderUpdateId", self._accepted_order_update_id) or 0
+            ),
+            "lastNodeId": str(last_base_node.get("nodeId", "")),
+            "lastNodeSequenceId": int(last_base_node.get("sequenceId", 0) or 0),
+            "nodeStates": list(status.get("nodeStates", [])),
+            "edgeStates": list(status.get("edgeStates", [])),
+            "velocity": {"vx": 0.0, "vy": 0.0, "omega": 0.0},
+            "loads": list(status.get("loads", [])),
+            "driving": self._driving_from_status(status),
+            "paused": bool(status.get("paused", False)),
+            "newBaseRequest": bool(status.get("newBaseRequest", False)),
+            "zoneRequests": [],
+            "edgeRequests": [],
+            "actionStates": [
+                self._vda_action_state(action)
+                for action in status.get("actionStates", [])
+                if isinstance(action, dict)
+            ],
+            "instantActionStates": instant_actions,
+            "zoneActionStates": [],
+            "powerSupply": {
+                "stateOfCharge": 100.0,
+                "batteryVoltage": 0.0,
+                "batteryCurrent": 0.0,
+                "batteryHealth": 100,
+                "charging": False,
+                "range": 0,
+            },
+            "operatingMode": str(status.get("operatingMode", "STARTUP") or "STARTUP"),
+            "errors": list(status.get("errors", [])) + driver_errors,
+            "information": self._state_information(status),
+            "safetyState": {
+                "activeEmergencyStop": "NONE",
+                "fieldViolation": False,
+            },
+        }
+
+    def _vda_action_state(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        state = {
+            "actionId": str(action.get("actionId", "")),
+            "actionType": str(action.get("actionType", "")),
+            "actionStatus": str(action.get("actionStatus", ACTION_WAITING)),
+        }
+        result = action.get("actionResult")
+        if result not in (None, ""):
+            state["actionResult"] = str(result)
+        return state
+
+    def _driving_from_status(self, status: Dict[str, Any]) -> bool:
+        external = status.get("externalActivity")
+        if isinstance(external, dict) and bool(external.get("active", False)):
+            return True
+        phase = str(status.get("currentActionPhase", "")).lower()
+        return "dock" in phase or "approach" in phase
+
+    def _state_information(self, status: Dict[str, Any]) -> List[Dict[str, Any]]:
+        info = [
+            {
+                "infoType": "VDA_DRIVER_LIMITATION",
+                "infoLevel": "INFO",
+                "infoDescription": (
+                    "Route edge traversal is not connected; default accepted orders "
+                    "are single-node action orders."
+                ),
+            }
+        ]
+        substate = status.get("substate")
+        if substate:
+            info.append(
+                {
+                    "infoType": "ROBOT_CONTROL_CORE_SUBSTATE",
+                    "infoLevel": "DEBUG",
+                    "infoDescription": str(substate),
+                }
+            )
+        return info
+
+    def _build_connection(self, state: str) -> Dict[str, Any]:
+        return {**self._header("connection"), "connectionState": state}
+
+    def _build_factsheet(self) -> Dict[str, Any]:
+        return {
+            **self._header("factsheet"),
+            "typeSpecification": {
+                "seriesName": self._series_name,
+                "seriesDescription": "ROS2 forklift controlled through robot_control_core",
+                "mobileRobotKinematics": "THREE_WHEEL",
+                "mobileRobotClass": "FORKLIFT",
+                "maximumLoadMass": float(self.get_parameter("maximum_load_mass_kg").value),
+                "localizationTypes": ["NATURAL", "DMC"],
+                "navigationTypes": [],
+                "supportedZones": [],
+            },
+            "physicalParameters": {
+                "minimumSpeed": float(self.get_parameter("minimum_speed_mps").value),
+                "maximumSpeed": float(self.get_parameter("maximum_speed_mps").value),
+                "minimumAngularSpeed": float(
+                    self.get_parameter("minimum_angular_speed_radps").value
+                ),
+                "maximumAngularSpeed": float(
+                    self.get_parameter("maximum_angular_speed_radps").value
+                ),
+                "maximumAcceleration": float(
+                    self.get_parameter("maximum_acceleration_mps2").value
+                ),
+                "maximumDeceleration": float(
+                    self.get_parameter("maximum_deceleration_mps2").value
+                ),
+                "minimumHeight": float(self.get_parameter("minimum_height_m").value),
+                "maximumHeight": float(self.get_parameter("maximum_height_m").value),
+                "width": float(self.get_parameter("width_m").value),
+                "length": float(self.get_parameter("length_m").value),
+            },
+            "protocolLimits": self._protocol_limits(),
+            "protocolFeatures": {
+                "optionalParameters": [
+                    {
+                        "parameter": "order.nodes.actions.actionParameters",
+                        "support": "SUPPORTED",
+                        "description": "Forwarded to robot_control_core action parameters.",
+                    },
+                    {
+                        "parameter": "state.actionStates.actionResult",
+                        "support": "SUPPORTED",
+                        "description": "Published from robot_control_core actionResult.",
+                    },
+                ],
+                "mobileRobotActions": self._factsheet_actions(),
+            },
+            "mobileRobotGeometry": {
+                "envelopes2d": [],
+                "envelopes3d": [],
+                "wheelDefinitions": [],
+            },
+            "loadSpecification": {
+                "loadPositions": ["forks"],
+                "loadSets": [],
+            },
+            "mobileRobotConfiguration": {
+                "versions": [
+                    {
+                        "key": "vda5050_3_driver",
+                        "value": "0.1.0",
+                    },
+                    {
+                        "key": "robot_control_core",
+                        "value": "json-service",
+                    },
+                ],
+                "network": {},
+            },
+        }
+
+    def _protocol_limits(self) -> Dict[str, Any]:
+        return {
+            "maximumStringLengths": {
+                "maximumMessageLength": int(self.get_parameter("maximum_message_length").value),
+                "maximumTopicSerialLength": 0,
+                "maximumTopicElementLength": 0,
+                "maximumIdLength": 0,
+                "idNumericalOnly": False,
+                "maximumLoadIdLength": 0,
+            },
+            "maximumArrayLengths": {
+                "order.nodes": int(self.get_parameter("maximum_nodes_per_order").value),
+                "order.edges": int(self.get_parameter("maximum_edges_per_order").value),
+                "node.actions": int(self.get_parameter("maximum_actions_per_node").value),
+                "edge.actions": int(self.get_parameter("maximum_actions_per_edge").value),
+                "actions.actionsParameters": 32,
+                "instantActions": int(self.get_parameter("maximum_instant_actions").value),
+                "trajectory.knotVector": 0,
+                "trajectory.controlPoints": 0,
+                "zoneSet.zones": 0,
+                "state.nodeStates": int(self.get_parameter("maximum_nodes_per_order").value),
+                "state.edgeStates": int(self.get_parameter("maximum_edges_per_order").value),
+                "state.loads": 1,
+                "state.actionStates": int(
+                    self.get_parameter("maximum_state_action_states").value
+                ),
+                "state.instantActionStates": int(
+                    self.get_parameter("maximum_instant_actions").value
+                ),
+                "state.zoneActionStates": 0,
+                "state.errors": int(self.get_parameter("maximum_state_errors").value),
+                "state.information": 8,
+                "error.errorReferences": 8,
+                "information.infoReferences": 8,
+            },
+            "timing": {
+                "minimumOrderInterval": 0.0,
+                "minimumStateInterval": float(
+                    self.get_parameter("minimum_state_interval_sec").value
+                ),
+                "defaultStateInterval": self._state_period,
+                "visualizationInterval": 0.0,
+            },
+        }
+
+    def _factsheet_actions(self) -> List[Dict[str, Any]]:
+        blocking = sorted(self._allowed_blocking_types)
+        return [
+            self._mobile_robot_action(
+                "finePositioning",
+                "Run pallet fine positioning through /palette_docking/control.",
+                ["NODE"],
+                [
+                    self._action_parameter("stationType", "STRING", True),
+                    self._action_parameter("stationName", "STRING", True),
+                    self._action_parameter("tag_frame", "STRING", True),
+                    self._action_parameter("standoff_distance_m", "NUMBER", True),
+                    self._action_parameter("approach_extra_drive_m", "NUMBER", True),
+                    self._action_parameter("final_drive_distance_m", "NUMBER", True),
+                    self._action_parameter("max_turn_angle_deg", "NUMBER", True),
+                    self._action_parameter("max_turn_angle_rad", "NUMBER", True),
+                ],
+                blocking,
+            ),
+            self._mobile_robot_action(
+                "pick",
+                "Lower forks, optionally dock to pallet, lift forks and mark load present.",
+                ["NODE"],
+                [
+                    self._action_parameter("lhd", "STRING", True),
+                    self._action_parameter("stationType", "STRING", True),
+                    self._action_parameter("stationName", "STRING", True),
+                    self._action_parameter("tag_frame", "STRING", True),
+                    self._action_parameter("loadType", "STRING", True),
+                    self._action_parameter("loadId", "STRING", True),
+                    self._action_parameter("height", "NUMBER", True),
+                    self._action_parameter("lift_position", "NUMBER", True),
+                    self._action_parameter("dock", "BOOL", True),
+                ],
+                blocking,
+            ),
+            self._mobile_robot_action(
+                "drop",
+                "Optionally dock, lower forks and clear load state.",
+                ["NODE"],
+                [
+                    self._action_parameter("lhd", "STRING", True),
+                    self._action_parameter("stationType", "STRING", True),
+                    self._action_parameter("stationName", "STRING", True),
+                    self._action_parameter("tag_frame", "STRING", True),
+                    self._action_parameter("loadType", "STRING", True),
+                    self._action_parameter("loadId", "STRING", True),
+                    self._action_parameter("height", "NUMBER", True),
+                    self._action_parameter("dock", "BOOL", True),
+                ],
+                blocking,
+            ),
+            self._mobile_robot_action("startPause", "Pause active order.", ["INSTANT"], [], ["NONE"]),
+            self._mobile_robot_action("stopPause", "Resume paused order.", ["INSTANT"], [], ["NONE"]),
+            self._mobile_robot_action(
+                "cancelOrder",
+                "Cancel active order.",
+                ["INSTANT"],
+                [self._action_parameter("orderId", "STRING", True)],
+                ["NONE"],
+            ),
+            self._mobile_robot_action("stateRequest", "Publish state immediately.", ["INSTANT"], [], ["NONE"]),
+            self._mobile_robot_action(
+                "factsheetRequest", "Publish factsheet immediately.", ["INSTANT"], [], ["NONE"]
+            ),
+            self._mobile_robot_action(
+                "clearInstantActions",
+                "Clear finished and failed instant action states tracked by the bridge.",
+                ["INSTANT"],
+                [],
+                ["NONE"],
+            ),
+        ]
+
+    def _mobile_robot_action(
+        self,
+        action_type: str,
+        description: str,
+        scopes: List[str],
+        parameters: List[Dict[str, Any]],
+        blocking_types: List[str],
+    ) -> Dict[str, Any]:
+        return {
+            "actionType": action_type,
+            "actionDescription": description,
+            "actionScopes": scopes,
+            "actionParameters": parameters,
+            "actionResult": "actionStatus and optional actionResult are reported in state.",
+            "blockingTypes": blocking_types,
+            "pauseAllowed": action_type not in {"startPause", "stopPause", "cancelOrder"},
+            "cancelAllowed": action_type not in {"startPause", "stopPause"},
+        }
+
+    def _action_parameter(
+        self, key: str, data_type: str, optional: bool, description: str = ""
+    ) -> Dict[str, Any]:
+        return {
+            "key": key,
+            "valueDataType": data_type,
+            "description": description or key,
+            "isOptional": optional,
+        }
+
+    def _publish_state(self) -> None:
+        state = self._build_state()
+        self._publish_json(self._state_pub, state)
+
+    def _publish_connection(self, state: str) -> None:
+        payload = self._build_connection(state)
+        self._publish_json(self._connection_pub, payload)
+
+    def _publish_factsheet(self) -> None:
+        factsheet = self._build_factsheet()
+        self._publish_json(self._factsheet_pub, factsheet)
+
+    def _publish_event(self, event_type: str, success: bool, result: Dict[str, Any]) -> None:
+        event = {
+            **self._header("events"),
+            "eventType": event_type,
+            "success": success,
+            "result": result,
+        }
+        self._publish_json(self._events_pub, event)
+
+    def _publish_json(self, publisher, payload: Dict[str, Any]) -> None:
+        msg = String()
+        msg.data = json.dumps(payload, ensure_ascii=False)
+        publisher.publish(msg)
+
+    def _publish_offline_once(self) -> None:
+        if self._offline_published:
+            return
+        self._offline_published = True
+        try:
+            self._publish_connection("OFFLINE")
+        except Exception:
+            pass
+
+    def _header(self, topic: str) -> Dict[str, Any]:
+        return {
+            "headerId": self._next_header_id(topic),
+            "timestamp": datetime.now(timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            "version": self._protocol_version,
+            "manufacturer": self._manufacturer,
+            "serialNumber": self._serial_number,
+        }
+
+    def _next_header_id(self, topic: str) -> int:
+        with self._lock:
+            value = self._header_ids.get(topic, 0)
+            self._header_ids[topic] = (value + 1) % 4294967296
+            return value
+
+    def _set_driver_error(
+        self,
+        error_type: str,
+        description: str,
+        *,
+        level: str = "WARNING",
+        references: Optional[List[Dict[str, str]]] = None,
+    ) -> None:
+        with self._lock:
+            self._driver_errors = [
+                {
+                    "errorType": error_type,
+                    "errorLevel": level,
+                    "errorReferences": references or [],
+                    "errorDescription": description,
+                }
+            ]
+
+    def _reject_result(
+        self,
+        error_type: str,
+        details: str,
+        *,
+        level: str = "WARNING",
+        references: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        self._set_driver_error(error_type, details, level=level, references=references)
+        return {
+            "accepted": False,
+            "errorType": error_type,
+            "errorLevel": level,
+            "details": details,
+            "errorReferences": references or [],
+        }
+
+    def _record_instant_action(
+        self, action_id: str, action_type: str, status: str, result: str
+    ) -> Dict[str, Any]:
+        action_state = {
+            "actionId": action_id,
+            "actionType": action_type,
+            "actionStatus": status,
+        }
+        if result:
+            action_state["actionResult"] = result
+        with self._lock:
+            self._instant_action_states.append(action_state)
+        return action_state
+
+    def _error_reference(self, key: str, value: Any) -> Dict[str, str]:
+        return {"referenceKey": key, "referenceValue": str(value)}
+
+    def _core_error_details(self, response: Any) -> str:
+        if isinstance(response, dict):
+            return str(response.get("details") or response.get("error") or response)
+        return str(response)
+
+    def _required_uint(self, obj: Dict[str, Any], key: str, path: str) -> int:
+        value = obj.get(key)
+        if not isinstance(value, int) or value < 0:
+            raise VdaReject("VALIDATION_FAILURE", "%s.%s must be uint32" % (path, key))
+        return value
+
+    def _sequence_items(
+        self, nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        items: List[Dict[str, Any]] = []
+        for index, node in enumerate(nodes):
+            items.append({"kind": "node", "index": index, "object": node})
+            if index < len(edges):
+                items.append({"kind": "edge", "index": index, "object": edges[index]})
+        return items
+
+    def _highest_released_node(self, nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
+        released = [node for node in nodes if bool(node.get("released", False))]
+        if not released:
+            return {}
+        node = released[-1]
+        return {
+            "nodeId": str(node.get("nodeId", "")),
+            "sequenceId": int(node.get("sequenceId", 0) or 0),
+        }
+
+    def _project_fields(self, source: Dict[str, Any], fields: List[str]) -> Dict[str, Any]:
+        return {field: source[field] for field in fields if field in source}
+
+    def _action_parameters(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        params: Dict[str, Any] = {}
+        for item in action.get("actionParameters") or []:
+            if isinstance(item, dict) and item.get("key") not in (None, ""):
+                params[str(item["key"])] = item.get("value")
+        return params
+
+    def _fingerprint(self, payload: Dict[str, Any]) -> str:
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def main(args=None) -> None:
+    rclpy.init(args=args)
+    node = Vda5050Bridge()
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(node)
+    try:
+        executor.spin()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node._publish_offline_once()
+        executor.remove_node(node)
+        node.destroy_node()
+        executor.shutdown()
+        rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

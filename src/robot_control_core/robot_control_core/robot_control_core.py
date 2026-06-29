@@ -40,6 +40,25 @@ WAITING_FOR_BASE_EXTENSION = "WAITING_FOR_BASE_EXTENSION"
 PAUSED = "PAUSED"
 CANCELLING = "CANCELLING"
 FAILED_RECOVERABLE = "FAILED_RECOVERABLE"
+EXTERNAL_ACTIVE = "EXTERNAL_ACTIVE"
+
+NAV_RESOLVING_ROUTE = "NAV_RESOLVING_ROUTE"
+NAV_FORWARD_PREFIX = "NAV_FORWARD_PREFIX"
+NAV_REVERSE_FINAL_EDGE = "NAV_REVERSE_FINAL_EDGE"
+NAV_PATH_ALIGNMENT = "NAV_PATH_ALIGNMENT"
+NAV_SHORT_ROUTE_ALIGNMENT = "NAV_SHORT_ROUTE_ALIGNMENT"
+NAV_TARGET_YAW_ALIGNMENT = "NAV_TARGET_YAW_ALIGNMENT"
+NAV_FOLLOW_PATH = "NAV_FOLLOW_PATH"
+NAV_DRIVE_ON_HEADING = "NAV_DRIVE_ON_HEADING"
+NAV_GOAL_YAW = "NAV_GOAL_YAW"
+NAV_ACTIVE = "NAV_ACTIVE"
+
+DOCK_WAIT_FOR_TAG = "DOCK_WAIT_FOR_TAG"
+DOCK_FINAL_DOCK = "DOCK_FINAL_DOCK"
+DOCK_FINAL_ALIGN_SWEEP = "DOCK_FINAL_ALIGN_SWEEP"
+DOCK_FINAL_APPROACH = "DOCK_FINAL_APPROACH"
+DOCK_FINAL_APPROACH_WIGGLE = "DOCK_FINAL_APPROACH_WIGGLE"
+DOCK_ACTIVE = "DOCK_ACTIVE"
 
 ROBOT_SHUTDOWN = "shutdown"
 MISSION_STARTED = "mission_started"
@@ -89,6 +108,24 @@ APPEND_BASE_COMMANDS = {"append_base", "extend_base", "release_horizon"}
 PAUSE_COMMANDS = {"pause", "startpause", "start_pause"}
 RESUME_COMMANDS = {"resume", "stoppause", "stop_pause", "release"}
 CANCEL_COMMANDS = {"cancel", "cancelorder", "cancel_order"}
+EXTERNAL_MIRROR_STATES = (
+    NAV_RESOLVING_ROUTE,
+    NAV_FORWARD_PREFIX,
+    NAV_REVERSE_FINAL_EDGE,
+    NAV_PATH_ALIGNMENT,
+    NAV_SHORT_ROUTE_ALIGNMENT,
+    NAV_TARGET_YAW_ALIGNMENT,
+    NAV_FOLLOW_PATH,
+    NAV_DRIVE_ON_HEADING,
+    NAV_GOAL_YAW,
+    NAV_ACTIVE,
+    DOCK_WAIT_FOR_TAG,
+    DOCK_FINAL_DOCK,
+    DOCK_FINAL_ALIGN_SWEEP,
+    DOCK_FINAL_APPROACH,
+    DOCK_FINAL_APPROACH_WIGGLE,
+    DOCK_ACTIVE,
+)
 
 
 @dataclass
@@ -141,6 +178,7 @@ class MissionDispatchState(State):
                 PAUSED,
                 FAILED_RECOVERABLE,
                 CANCELLING,
+                *EXTERNAL_MIRROR_STATES,
                 *MODE_OUTCOMES,
                 ROBOT_SHUTDOWN,
             ]
@@ -156,7 +194,14 @@ class MissionDispatchState(State):
 
 class MissionIdleState(State):
     def __init__(self, core: "RobotControlCore", mode: str) -> None:
-        super().__init__([MISSION_STARTED, *MODE_OUTCOMES, ROBOT_SHUTDOWN])
+        super().__init__(
+            [
+                MISSION_STARTED,
+                *EXTERNAL_MIRROR_STATES,
+                *MODE_OUTCOMES,
+                ROBOT_SHUTDOWN,
+            ]
+        )
         self._core = core
         self._mode = mode
 
@@ -169,6 +214,38 @@ class MissionIdleState(State):
                 return outcome
             if self._core._mission_active_snapshot():
                 return MISSION_STARTED
+            external_state = self._core._external_mirror_state_snapshot()
+            if external_state:
+                return external_state
+            self._core._wait_for_mission_event()
+        return ROBOT_SHUTDOWN
+
+
+class ExternalMirrorState(State):
+    def __init__(self, core: "RobotControlCore", mode: str, mirror_state: str) -> None:
+        super().__init__(
+            [
+                IDLE,
+                MISSION_STARTED,
+                *EXTERNAL_MIRROR_STATES,
+                *MODE_OUTCOMES,
+                ROBOT_SHUTDOWN,
+            ]
+        )
+        self._core = core
+        self._mode = mode
+        self._mirror_state = mirror_state
+
+    def execute(self, blackboard: Blackboard) -> str:
+        del blackboard
+        self._core._enter_external_mirror_state(self._mirror_state)
+        while rclpy.ok():
+            outcome = self._core._external_mirror_outcome(
+                self._mode,
+                self._mirror_state,
+            )
+            if outcome:
+                return outcome
             self._core._wait_for_mission_event()
         return ROBOT_SHUTDOWN
 
@@ -311,6 +388,10 @@ class RobotControlCore(Node):
             "motion_control_service", "/cmd_vel_arcestrator/control"
         )
         self.declare_parameter("docking_control_service", "/palette_docking/control")
+        self.declare_parameter("navigation_status_topic", "/forklift_nav/state")
+        self.declare_parameter(
+            "docking_status_topic", "/palette_docking_no_camera/status"
+        )
         self.declare_parameter("fork_cmd_topic", "/forklift/fork_cmd")
         self.declare_parameter("joint_states_topic", "/joint_states")
         self.declare_parameter("fork_joint_name", "fork_joint")
@@ -361,12 +442,6 @@ class RobotControlCore(Node):
         self._fork_pub = self.create_publisher(
             Float64, str(self.get_parameter("fork_cmd_topic").value), 10
         )
-        self.create_subscription(
-            JointState,
-            str(self.get_parameter("joint_states_topic").value),
-            self._joint_state_callback,
-            10,
-        )
         self.create_service(StringWithJson, control_service, self._handle_control)
         self._status_pub = self.create_publisher(String, status_topic, 10)
         self.create_timer(1.0 / tick_rate_hz, self._tick)
@@ -405,6 +480,27 @@ class RobotControlCore(Node):
         self._cancel_requested = False
         self._shutdown_requested = False
         self._yasmin_viewer_missing_logged = False
+        self._external_nav_status: Dict[str, Any] = {}
+        self._external_docking_status: Dict[str, Any] = {}
+
+        self.create_subscription(
+            String,
+            str(self.get_parameter("navigation_status_topic").value),
+            self._navigation_status_callback,
+            10,
+        )
+        self.create_subscription(
+            String,
+            str(self.get_parameter("docking_status_topic").value),
+            self._docking_status_callback,
+            10,
+        )
+        self.create_subscription(
+            JointState,
+            str(self.get_parameter("joint_states_topic").value),
+            self._joint_state_callback,
+            10,
+        )
 
         self.get_logger().info(
             "robot_control_core ready: control=%s status=%s tick=%.1fHz"
@@ -518,6 +614,7 @@ class RobotControlCore(Node):
         sm = StateMachine(outcomes=[*MODE_OUTCOMES, ROBOT_SHUTDOWN], handle_sigint=False)
         sm.set_name("%s_mode" % mode.lower())
         mode_transitions = self._terminal_mode_transitions()
+        external_transitions = {state: state for state in EXTERNAL_MIRROR_STATES}
         sm.add_state(
             DISPATCH,
             MissionDispatchState(self, mode),
@@ -528,6 +625,7 @@ class RobotControlCore(Node):
                 PAUSED: PAUSED,
                 FAILED_RECOVERABLE: FAILED_RECOVERABLE,
                 CANCELLING: CANCELLING,
+                **external_transitions,
                 **mode_transitions,
                 ROBOT_SHUTDOWN: ROBOT_SHUTDOWN,
             },
@@ -537,10 +635,23 @@ class RobotControlCore(Node):
             MissionIdleState(self, mode),
             {
                 MISSION_STARTED: EXECUTING_BASE,
+                **external_transitions,
                 **mode_transitions,
                 ROBOT_SHUTDOWN: ROBOT_SHUTDOWN,
             },
         )
+        for mirror_state in EXTERNAL_MIRROR_STATES:
+            sm.add_state(
+                mirror_state,
+                ExternalMirrorState(self, mode, mirror_state),
+                {
+                    IDLE: IDLE,
+                    MISSION_STARTED: EXECUTING_BASE,
+                    **external_transitions,
+                    **mode_transitions,
+                    ROBOT_SHUTDOWN: ROBOT_SHUTDOWN,
+                },
+            )
         sm.add_state(
             EXECUTING_BASE,
             MissionExecutingState(self, mode),
@@ -599,6 +710,114 @@ class RobotControlCore(Node):
 
     def _terminal_mode_transitions(self) -> Dict[str, str]:
         return {"to_%s" % mode: "to_%s" % mode for mode in OPERATING_MODE_ORDER}
+
+    def _navigation_status_callback(self, msg: String) -> None:
+        status = self._decode_status_message(msg.data, "navigation")
+        if status is None:
+            return
+        with self._mission_lock:
+            self._external_nav_status = status
+        self._mission_event.set()
+
+    def _docking_status_callback(self, msg: String) -> None:
+        status = self._decode_status_message(msg.data, "docking")
+        if status is None:
+            return
+        with self._mission_lock:
+            self._external_docking_status = status
+        self._mission_event.set()
+
+    def _decode_status_message(
+        self, data: str, source: str
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            status = json.loads(data or "{}")
+        except json.JSONDecodeError as exc:
+            self.get_logger().warn("invalid %s status JSON: %s" % (source, exc))
+            return None
+        if not isinstance(status, dict):
+            self.get_logger().warn("%s status is not a JSON object" % source)
+            return None
+        return status
+
+    def _external_mirror_state_snapshot(self) -> str:
+        with self._mission_lock:
+            if self._mission_active_locked():
+                return ""
+            return self._external_mirror_state_locked()
+
+    def _external_mirror_outcome(self, mode: str, current_state: str) -> str:
+        mode_outcome = self._mode_transition_outcome(mode)
+        if mode_outcome:
+            return mode_outcome
+        if self._mission_active_snapshot():
+            return MISSION_STARTED
+        next_state = self._external_mirror_state_snapshot()
+        if not next_state:
+            return IDLE
+        if next_state != current_state:
+            return next_state
+        return ""
+
+    def _external_mirror_state_locked(self) -> str:
+        docking_state = self._docking_mirror_state_locked()
+        if docking_state:
+            return docking_state
+        return self._navigation_mirror_state_locked()
+
+    def _navigation_mirror_state_locked(self) -> str:
+        status = self._external_nav_status
+        if not bool(status.get("active", False)):
+            return ""
+        phase = str(status.get("phase") or "").upper()
+        last_result = status.get("last_result")
+        if isinstance(last_result, dict) and not phase:
+            phase = str(last_result.get("phase") or "").upper()
+        return {
+            "ACCEPTED": NAV_RESOLVING_ROUTE,
+            "RESOLVING_ROUTE": NAV_RESOLVING_ROUTE,
+            "FORWARD_PREFIX": NAV_FORWARD_PREFIX,
+            "REVERSE_FINAL_EDGE": NAV_REVERSE_FINAL_EDGE,
+            "PATH_ALIGNMENT": NAV_PATH_ALIGNMENT,
+            "SHORT_ROUTE_ALIGNMENT": NAV_SHORT_ROUTE_ALIGNMENT,
+            "TARGET_YAW_ALIGNMENT": NAV_TARGET_YAW_ALIGNMENT,
+            "FOLLOW_PATH": NAV_FOLLOW_PATH,
+            "DRIVE_ON_HEADING": NAV_DRIVE_ON_HEADING,
+            "GOAL_YAW_ALIGNMENT": NAV_GOAL_YAW,
+        }.get(phase, NAV_ACTIVE)
+
+    def _docking_mirror_state_locked(self) -> str:
+        status = self._external_docking_status
+        if not bool(status.get("active", False)):
+            return ""
+        phase = str(status.get("phase") or "").upper()
+        state = str(status.get("state") or "").upper()
+        if phase == "WAIT_FOR_TAG" or state == "WAIT_FOR_TAG":
+            return DOCK_WAIT_FOR_TAG
+        if phase == "FINAL_DOCK_ALIGN_SWEEP":
+            return DOCK_FINAL_ALIGN_SWEEP
+        if phase == "FINAL_DOCK_APPROACH":
+            return DOCK_FINAL_APPROACH
+        if phase == "FINAL_DOCK_APPROACH_WIGGLE":
+            return DOCK_FINAL_APPROACH_WIGGLE
+        if phase.startswith("FINAL_DOCK") or state == "FINAL_DOCK":
+            return DOCK_FINAL_DOCK
+        return DOCK_ACTIVE
+
+    def _enter_external_mirror_state(self, mirror_state: str) -> None:
+        with self._mission_lock:
+            if not self._mission_active_locked():
+                self._state = EXTERNAL_ACTIVE
+                self._substate = mirror_state
+
+    def _external_activity_status_locked(self) -> Dict[str, Any]:
+        mirror_state = self._external_mirror_state_locked()
+        return {
+            "active": bool(mirror_state),
+            "mirrorState": mirror_state,
+            "navigation": dict(self._external_nav_status),
+            "docking": dict(self._external_docking_status),
+        }
 
     def _build_architecture_fsms(self) -> Dict[str, StateMachine]:
         return {
@@ -1050,7 +1269,8 @@ class RobotControlCore(Node):
             return ROBOT_SHUTDOWN
         with self._mission_lock:
             if not self._mission_active_locked():
-                return IDLE
+                external_state = self._external_mirror_state_locked()
+                return external_state or IDLE
             if self._cancel_requested:
                 return CANCELLING
             if mode == INTERVENED:
@@ -1154,6 +1374,8 @@ class RobotControlCore(Node):
             CANCELLING,
         }:
             self._enter_mission_substate(target)
+        elif target in EXTERNAL_MIRROR_STATES:
+            self._enter_external_mirror_state(target)
 
     def _on_yasmin_end(self, blackboard: Blackboard, outcome: str) -> None:
         del blackboard
@@ -1723,6 +1945,7 @@ class RobotControlCore(Node):
             if self._mission_fsm is not None:
                 fsm_state = self._mission_fsm.get_current_state()
             substate = fsm_state or self._substate
+            external_activity = self._external_activity_status_locked()
             return {
                 "state": self._state,
                 "substate": substate,
@@ -1751,6 +1974,7 @@ class RobotControlCore(Node):
                 "instantActionStates": list(self._instant_action_states),
                 "loads": list(self._loads),
                 "errors": list(self._errors),
+                "externalActivity": external_activity,
                 "forkPosition": self._fork_position,
             }
 

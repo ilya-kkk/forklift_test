@@ -6,6 +6,8 @@ route_service:
     move_to_service_name: /forklift_nav/move_to
     revers_move_to_service_name: /forklift_nav/revers_move_to
     status_service_name: /forklift_nav/status
+    status_topic: /forklift_nav/state
+    status_publish_period_sec: 0.5
     follow_path_action_name: follow_path
     spin_action_name: spin
     drive_on_heading_action_name: drive_on_heading

@@ -3,6 +3,8 @@ palette_docking_no_camera:
     use_sim_time: true
 
     service_name: /palette_docking_no_camera/control
+    status_topic: /palette_docking_no_camera/status
+    status_publish_period_sec: 0.5
     target_frame: base_link
     global_frame: map
     robot_base_frame: base_link

@@ -1,0 +1,8 @@
+services:
+  vda5050_mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: forklift_test_vda5050_mosquitto
+    ports:
+      - "1884:1883"
+    volumes:
+      - ./docker/vda5050_mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro

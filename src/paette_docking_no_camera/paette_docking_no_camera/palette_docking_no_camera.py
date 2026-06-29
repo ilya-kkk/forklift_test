@@ -18,6 +18,7 @@ from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
+from std_msgs.msg import String
 from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -75,6 +76,8 @@ class PaletteDockingNoCamera(Node):
         super().__init__("palette_docking_no_camera")
 
         self.declare_parameter("service_name", "/palette_docking_no_camera/control")
+        self.declare_parameter("status_topic", "/palette_docking_no_camera/status")
+        self.declare_parameter("status_publish_period_sec", 0.5)
         self.declare_parameter("target_frame", "base_link")
         self.declare_parameter("global_frame", "map")
         self.declare_parameter("robot_base_frame", "base_link")
@@ -133,6 +136,10 @@ class PaletteDockingNoCamera(Node):
         self.declare_parameter("start_enabled", False)
 
         service_name = str(self.get_parameter("service_name").value)
+        status_topic = str(self.get_parameter("status_topic").value)
+        status_publish_period_sec = max(
+            0.1, float(self.get_parameter("status_publish_period_sec").value)
+        )
         self._target_frame = str(self.get_parameter("target_frame").value)
         self._global_frame = str(self.get_parameter("global_frame").value)
         self._robot_base_frame = str(self.get_parameter("robot_base_frame").value)
@@ -281,6 +288,7 @@ class PaletteDockingNoCamera(Node):
         self._marker_publisher = self.create_publisher(
             MarkerArray, str(self.get_parameter("marker_topic").value), marker_qos
         )
+        self._status_publisher = self.create_publisher(String, status_topic, 10)
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
         self._drive_client = ActionClient(
@@ -296,19 +304,23 @@ class PaletteDockingNoCamera(Node):
         self._cancel_requested = False
         self._failure_reason = ""
         self._last_result: Dict[str, Any] = {"state": "idle"}
+        self._phase = IDLE
+        self._phase_details: Dict[str, Any] = {}
         self._last_observation: Optional[PalletObservation] = None
         self._last_plan: Optional[DockPlan] = None
 
         self.create_service(StringWithJson, service_name, self._handle_control)
+        self.create_timer(status_publish_period_sec, self._publish_status)
 
         if bool(self.get_parameter("start_enabled").value):
             self._start({})
 
         self.get_logger().info(
-            "palette_docking_no_camera ready: service=%s target_frame=%s "
+            "palette_docking_no_camera ready: service=%s status_topic=%s target_frame=%s "
             "global_frame=%s base=%s motion=%s tag=%s candidates=%d"
             % (
                 service_name,
+                status_topic,
                 self._target_frame,
                 self._global_frame,
                 self._robot_base_frame,
@@ -370,6 +382,8 @@ class PaletteDockingNoCamera(Node):
             self._failure_reason = ""
             self._last_result = {"state": "running"}
             self._state = WAIT_FOR_TAG
+            self._phase = WAIT_FOR_TAG
+            self._phase_details = {}
             self._last_observation = None
             self._last_plan = None
 
@@ -381,6 +395,7 @@ class PaletteDockingNoCamera(Node):
         with self._lock:
             self._active_thread = worker
         worker.start()
+        self._publish_status()
         return True
 
     def _reset(self) -> bool:
@@ -389,11 +404,14 @@ class PaletteDockingNoCamera(Node):
             if active:
                 return False
             self._state = IDLE
+            self._phase = IDLE
+            self._phase_details = {}
             self._failure_reason = ""
             self._last_result = {"state": "idle"}
             self._last_observation = None
             self._last_plan = None
         self._publish_delete_all_markers()
+        self._publish_status()
         return True
 
     def _request_cancel(self, reason: str) -> None:
@@ -468,6 +486,7 @@ class PaletteDockingNoCamera(Node):
                 self._active_goal_handle = None
                 self._active_thread = None
                 self._last_result = result
+            self._publish_status()
 
     def _options_from_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         max_initial_angle = self._payload_float(
@@ -984,11 +1003,26 @@ class PaletteDockingNoCamera(Node):
         with self._lock:
             old_state = self._state
             self._state = state
+            self._phase = state
+            self._phase_details = {}
         if old_state != state:
             self.get_logger().info(
                 "palette docking no camera state: %s -> %s (%s)"
                 % (old_state, state, reason)
             )
+        self._publish_status()
+
+    def _set_phase(self, phase: str, **details: Any) -> None:
+        phase = str(phase)
+        with self._lock:
+            old_phase = self._phase
+            self._phase = phase
+            self._phase_details = dict(details)
+        if old_phase != phase:
+            self.get_logger().info(
+                "palette docking no camera phase: %s -> %s" % (old_phase, phase)
+            )
+        self._publish_status()
 
     def _store_observation(self, observation: PalletObservation) -> None:
         with self._lock:
@@ -1002,6 +1036,8 @@ class PaletteDockingNoCamera(Node):
         with self._lock:
             active = self._active_thread is not None and self._active_thread.is_alive()
             state = self._state
+            phase = self._phase
+            phase_details = dict(self._phase_details)
             last_result = dict(self._last_result)
             failure_reason = self._failure_reason
             observation = self._last_observation
@@ -1009,6 +1045,8 @@ class PaletteDockingNoCamera(Node):
         return {
             "active": active,
             "state": state,
+            "phase": phase,
+            "phase_details": phase_details,
             "result": last_result,
             "failure_reason": failure_reason,
             "target_frame": self._target_frame,
@@ -1018,6 +1056,11 @@ class PaletteDockingNoCamera(Node):
             "last_observation": self._observation_status(observation),
             "last_plan": self._plan_status(plan),
         }
+
+    def _publish_status(self) -> None:
+        msg = String()
+        msg.data = json.dumps(self._status(), ensure_ascii=False)
+        self._status_publisher.publish(msg)
 
     def _observation_status(
         self, observation: Optional[PalletObservation]
@@ -1608,6 +1651,17 @@ class PaletteDockingNoCamera(Node):
                             direction = 1.0 if y_error > 0.0 else -1.0
                         twist.angular.z = direction * wiggle
                         control_mode = "approach_wiggle"
+                self._set_phase(
+                    "FINAL_DOCK_%s" % control_mode.upper(),
+                    frame=tag_frame,
+                    x=current["x"],
+                    y=current["y"],
+                    x_error=current["x_error_m"],
+                    y_error=current["y_error_m"],
+                    source=current.get("measurement_source", "unknown"),
+                    lookups=tf_lookup_count,
+                    anchored_cycles=anchored_control_cycles,
+                )
                 last_control_mode = control_mode
                 last_cmd_linear = float(twist.linear.x)
                 last_cmd_angular = float(twist.angular.z)
